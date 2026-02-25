@@ -97,13 +97,11 @@ export default function ArgumentativeWritingAssistant() {
     setIsPanelOpen(true)
 
     try {
-      const [argResult, lexResult] = await Promise.all([
+      const [argResult] = await Promise.all([
         analyzeArgumentativeStructure(essay, selectedPrompt), // 👈 pass prompt
-        analyzeLexicalFeatures(essay),
       ])
 
       setArgumentAnalysis(argResult)
-      setLexicalAnalysis(lexResult)
 
       const newHighlights: Highlight[] = []
 
@@ -146,73 +144,6 @@ export default function ArgumentativeWritingAssistant() {
           }
         }
       })
-
-      if (lexResult && lexResult.awlCoverage) {
-        lexResult.awlCoverage.suggestions.forEach((suggestion, index) => {
-          const regex = new RegExp(`\\b${suggestion.original}\\b`, "gi")
-          let match
-          while ((match = regex.exec(essay)) !== null) {
-            newHighlights.push({
-              id: `awl-${index}-${match.index}`,
-              elementId: "",
-              start: match.index,
-              end: match.index + match[0].length,
-              text: match[0], // Store the matched text
-              type: "lexical",
-              subtype: "awl",
-              color: "bg-blue-100 border-blue-300",
-              feedback: `Academic Word List: ${suggestion.original} (Sublist ${suggestion.sublist})`,
-              persistent: true,
-              word: suggestion.original,
-            })
-          }
-        })
-      }
-
-      if (lexResult && lexResult.aflCoverage) {
-        lexResult.aflCoverage.suggestions.forEach((suggestion, index) => {
-          const regex = new RegExp(suggestion.original.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi")
-          let match
-          while ((match = regex.exec(essay)) !== null) {
-            newHighlights.push({
-              id: `afl-${index}-${match.index}`,
-              elementId: "",
-              start: match.index,
-              end: match.index + match[0].length,
-              text: match[0], // Store the matched text
-              type: "lexical",
-              subtype: "afl",
-              color: "bg-green-100 border-green-300",
-              feedback: `Academic Formula List: ${suggestion.original}`,
-              persistent: true,
-              word: suggestion.original,
-            })
-          }
-        })
-      }
-
-      if (lexResult && lexResult.lexicalDiversity.mattr < 0.7) {
-        const repetitiveWords = findRepetitiveWords(essay)
-        repetitiveWords.forEach((item, index) => {
-          const regex = new RegExp(`\\b${item.word}\\b`, "gi")
-          let match
-          while ((match = regex.exec(essay)) !== null) {
-            newHighlights.push({
-              id: `repetitive-${index}-${match.index}`,
-              elementId: "",
-              start: match.index,
-              end: match.index + match[0].length,
-              text: match[0], // Store the matched text
-              type: "lexical",
-              subtype: "repetitive",
-              color: "bg-orange-100 border-orange-300",
-              feedback: `Repetitive word: "${item.word}" appears ${item.count} times (${item.frequency}%)`,
-              persistent: true,
-              word: item.word,
-            })
-          }
-        })
-      }
 
       setHighlights(newHighlights)
     } catch (error) {
@@ -296,12 +227,13 @@ export default function ArgumentativeWritingAssistant() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b bg-card">
+        
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
                 {/* <Brain className="h-6 w-6 text-primary" /> */}
-                <h1 className="text-xl font-bold">Revisage Analytics              </h1>
+                <h1 className="text-xl font-bold">ReflectNote          </h1>
               </div>
 
             </div>

@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   title: 'Argumentative Writing Assistant'
 }
 
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -15,6 +16,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <script
+          async
+          crossOrigin="anonymous"
+          src="https://tweakcn.com/live-preview.min.js"
+        />
+      </head>
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
         {children}
         <Analytics />

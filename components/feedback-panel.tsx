@@ -141,53 +141,24 @@ export function FeedbackPanel({
             <Card className="h-full rounded-none border-0 bg-transparent shadow-none">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between ">
-                  <CardTitle className="text-lg">Analysis Feedback</CardTitle>
+                  <CardTitle className="text-lg">Feedback Panel</CardTitle>
                   <Button variant="ghost" size="sm" onClick={onToggle} className="h-8 w-8 p-0">
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
               </CardHeader>
-
-              <CardContent className="flex-1 p-0 h-[calc(100%-80px)]">
-              {/* <div className="flex-1 min-h-0 px-6"> */}
-                <Tabs value={activeTab} onValueChange={handleTabChange} className="h-full flex flex-col">
-                  <TabsList className="grid w-full grid-cols-2 flex-shrink-0">
-                    <TabsTrigger value="argumentative" className="flex items-center gap-2">
-                      <Eye className="h-4 w-4" />
-                      Visual Feedback
-                    </TabsTrigger>
-                    <TabsTrigger value="lexical" className="flex items-center gap-2">
-                      <BookOpen className="h-4 w-4" />
-                      Lexical Feedback
-                    </TabsTrigger>
-                  </TabsList>
-
-                  <div className="flex-1 overflow-hidden">
-                    <TabsContent value="argumentative" className="h-full m-0">
-                      <ArgumentativeFeedback
-                        analysis={argumentAnalysis}
-                        essay={essay}
-                        isAnalyzing={isAnalyzing}
-                        onHighlightText={onHighlightText}
-                        onElementSelect={onElementSelect}
-                      />
-                    </TabsContent>
-
-                    <TabsContent value="lexical" className="h-full m-0">
-                      <LexicalFeedback
-                        analysis={lexicalAnalysis}
-                        essay={essay}
-                        isAnalyzing={isAnalyzing}
-                        onHighlightText={onHighlightText}
-                        onSubTabChange={onSubTabChange}
-                      />
-                    </TabsContent>
-                  </div>
-                </Tabs>
+              <CardContent className="flex-1 p-0 h-[calc(100%-80px)] overflow-hidden">
+                <ArgumentativeFeedback
+                  analysis={argumentAnalysis}
+                  essay={essay}
+                  isAnalyzing={isAnalyzing}
+                  onHighlightText={onHighlightText}
+                  onElementSelect={onElementSelect}
+                />
               </CardContent>
-              {/* </div> */}
+
+              
             </Card>
-            {/* </div> */}
           </motion.div>
         )}
       </AnimatePresence>
