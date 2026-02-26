@@ -1,5 +1,4 @@
 import type { AnalysisResult, ArgumentElement } from "@/lib/types"
-import { assertSupabaseClientConfig, supabase } from "@/lib/supabaseClient"
 
 export type InteractionEventType =
   | "initial_draft"
@@ -20,35 +19,28 @@ export interface SessionIssue {
   correctedText: string
 }
 
+async function researchRequest<T>(action: string, payload: Record<string, unknown>): Promise<T> {
+  const response = await fetch("/api/research", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, payload }),
+  })
+
+  const json = await response.json().catch(() => null)
+  if (!response.ok) {
+    throw new Error(json?.error || `Research API ${action} failed`)
+  }
+
+  return json as T
+}
+
 export async function ensureSession(sessionId: string): Promise<void> {
-  assertSupabaseClientConfig()
-  const { data, error } = await supabase.from("sessions").select("id").eq("id", sessionId).limit(1)
-
-  if (error) {
-    throw error
-  }
-
-  if (data && data.length > 0) {
-    return
-  }
-
-  const { error: insertError } = await supabase.from("sessions").insert({ id: sessionId, condition: "baseline" })
-
-  if (insertError) {
-    throw insertError
-  }
+  await researchRequest("ensureSession", { sessionId })
 }
 
 export async function hasInitialDraftLog(sessionId: string): Promise<boolean> {
-  assertSupabaseClientConfig()
-  const { data } = await supabase
-    .from("interaction_logs")
-    .select("id")
-    .eq("session_id", sessionId)
-    .eq("event_type", "initial_draft")
-    .limit(1)
-
-  return !!data?.length
+  const data = await researchRequest<{ exists: boolean }>("hasInitialDraftLog", { sessionId })
+  return data.exists
 }
 
 export async function logEvent(params: {
@@ -57,25 +49,8 @@ export async function logEvent(params: {
   issueId?: string | null
   metadata?: Record<string, unknown>
 }): Promise<void> {
-  assertSupabaseClientConfig()
   const { sessionId, eventType, issueId, metadata } = params
-  const feedbackLevel = eventType === "corrected_viewed" ? 3 : null
-
-  if (eventType === "corrected_viewed" && !issueId) {
-    throw new Error("issueId is required when eventType is corrected_viewed")
-  }
-
-  const { error } = await supabase.from("interaction_logs").insert({
-    session_id: sessionId,
-    issue_id: issueId ?? null,
-    event_type: eventType,
-    feedback_level: feedbackLevel,
-    metadata: metadata ?? null,
-  })
-
-  if (error) {
-    throw error
-  }
+  await researchRequest("logEvent", { sessionId, eventType, issueId: issueId ?? null, metadata: metadata ?? null })
 }
 
 export async function saveDraftSnapshot(params: {
@@ -83,17 +58,8 @@ export async function saveDraftSnapshot(params: {
   stage: DraftStage
   draftText: string
 }): Promise<void> {
-  assertSupabaseClientConfig()
   const { sessionId, stage, draftText } = params
-  const { error } = await supabase.from("draft_snapshots").insert({
-    session_id: sessionId,
-    stage,
-    draft_text: draftText,
-  })
-
-  if (error) {
-    throw error
-  }
+  await researchRequest("saveDraftSnapshot", { sessionId, stage, draftText })
 }
 
 function normalizeIssueText(text?: string): string {
@@ -163,66 +129,14 @@ export async function replaceSessionIssues(
   sessionId: string,
   analysis: AnalysisResult,
 ): Promise<Record<string, SessionIssue>> {
-  assertSupabaseClientConfig()
   const issueRows = buildIssues(analysis)
-
-  const { error: deleteError } = await supabase.from("issues").delete().eq("session_id", sessionId)
-  if (deleteError) {
-    throw deleteError
-  }
-
-  if (!issueRows.length) return {}
-
-  const { data, error } = await supabase
-    .from("issues")
-    .insert(
-      issueRows.map((issue) => ({
-        session_id: sessionId,
-        element_type: issue.elementType,
-        issue_index: issue.issueIndex,
-        original_text: issue.originalText,
-        corrected_text: issue.correctedText,
-      })),
-    )
-    .select("id, element_type, issue_index, original_text, corrected_text")
-
-  if (error) {
-    throw error
-  }
-
-  const map: Record<string, SessionIssue> = {}
-  for (const row of data ?? []) {
-    const key = issueRows.find(
-      (issue) =>
-        issue.elementType === row.element_type &&
-        issue.issueIndex === row.issue_index &&
-        issue.originalText === row.original_text &&
-        issue.correctedText === row.corrected_text,
-    )?.key
-
-    if (!key) continue
-
-    map[key] = {
-      id: row.id,
-      key,
-      elementType: row.element_type,
-      issueIndex: row.issue_index,
-      originalText: row.original_text,
-      correctedText: row.corrected_text,
-    }
-  }
-
-  return map
+  const data = await researchRequest<{ issuesByKey: Record<string, SessionIssue> }>("replaceSessionIssues", {
+    sessionId,
+    issues: issueRows,
+  })
+  return data.issuesByKey
 }
 
 export async function markSessionSubmitted(sessionId: string): Promise<void> {
-  assertSupabaseClientConfig()
-  const { error } = await supabase
-    .from("sessions")
-    .update({ submitted_at: new Date().toISOString() })
-    .eq("id", sessionId)
-
-  if (error) {
-    throw error
-  }
+  await researchRequest("markSessionSubmitted", { sessionId })
 }

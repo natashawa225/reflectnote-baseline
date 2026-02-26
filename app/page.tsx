@@ -69,10 +69,15 @@ export default function ArgumentativeWritingAssistant() {
     if (!id) return
 
     const bootstrapSession = async () => {
-      await ensureSession(id)
-      const initialLogged = await hasInitialDraftLog(id)
-      setHasSubmittedInitialDraft(initialLogged)
-      setSessionReady(true)
+      try {
+        await ensureSession(id)
+        const initialLogged = await hasInitialDraftLog(id)
+        setHasSubmittedInitialDraft(initialLogged)
+        setSessionReady(true)
+      } catch (error) {
+        console.error("Session bootstrap failed:", error)
+        setSessionReady(false)
+      }
     }
 
     setSessionId(id)
