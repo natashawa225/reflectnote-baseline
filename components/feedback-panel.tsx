@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ChevronLeft, X, GripVertical, Eye, BookOpen } from "lucide-react"
 import { ArgumentativeFeedback } from "./argumentative-feedback"
 import { LexicalFeedback } from "./lexical-feedback"
-import type { AnalysisResult, LexicalAnalysis } from "@/lib/types"
+import type { AnalysisResult, LexicalAnalysis, ArgumentElementKey } from "@/lib/types"
 
 interface FeedbackPanelProps {
   isOpen: boolean
@@ -25,6 +25,12 @@ interface FeedbackPanelProps {
   onElementSelect?: (elementId: string | null) => void
   onTabChange?: (tab: string) => void
   onSubTabChange?: (subTab: string) => void
+  onCorrectionViewed?: (params: {
+    key: string
+    elementType: ArgumentElementKey
+    originalText: string
+    correctedText: string
+  }) => void
 }
 
 export function FeedbackPanel({
@@ -40,6 +46,7 @@ export function FeedbackPanel({
   onElementSelect,
   onTabChange,
   onSubTabChange,
+  onCorrectionViewed,
 }: FeedbackPanelProps) {
   const [activeTab, setActiveTab] = useState("argumentative")
   const [isResizing, setIsResizing] = useState(false)
@@ -154,6 +161,7 @@ export function FeedbackPanel({
                   isAnalyzing={isAnalyzing}
                   onHighlightText={onHighlightText}
                   onElementSelect={onElementSelect}
+                  onCorrectionViewed={onCorrectionViewed}
                 />
               </CardContent>
 

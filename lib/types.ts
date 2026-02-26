@@ -19,6 +19,8 @@ export interface AnalysisResult {
     conclusion: ArgumentElement
   }
 }
+
+export type ArgumentElementKey = keyof AnalysisResult["elements"]
 export interface LexicalDiversity {
   uniqueWords: number
   totalWords: number

@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Progress } from "@/components/ui/progress"
 import { Eye, Lightbulb, Sparkles, Target, TrendingUp, AlertTriangle, CheckCircle, ArrowBigRight, Info, HelpCircle } from "lucide-react"
 import { ArgumentDiagram } from "./argument-diagram"
-import type { AnalysisResult, ArgumentElement } from "@/lib/types"
+import type { AnalysisResult, ArgumentElement, ArgumentElementKey } from "@/lib/types"
 import { SetupGuide } from "@/components/setup-guide"
 import ReactMarkdown from "react-markdown"
 import rehypeRaw from 'rehype-raw';
@@ -19,9 +19,21 @@ interface ArgumentativeFeedbackProps {
   isAnalyzing: boolean
   onHighlightText?: (text: string, effectiveness: string) => void
   onElementSelect?: (elementId: string | null) => void
+  onCorrectionViewed?: (params: {
+    key: string
+    elementType: ArgumentElementKey
+    originalText: string
+    correctedText: string
+  }) => void
 }
 
-export function ArgumentativeFeedback({ analysis, essay, isAnalyzing, onHighlightText }: ArgumentativeFeedbackProps) {
+export function ArgumentativeFeedback({
+  analysis,
+  essay,
+  isAnalyzing,
+  onHighlightText,
+  onCorrectionViewed,
+}: ArgumentativeFeedbackProps) {
   const [showDiagram, setShowDiagram] = useState(false)
   const [selectedElement, setSelectedElement] = useState<string | null>(null)
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
@@ -126,10 +138,25 @@ export function ArgumentativeFeedback({ analysis, essay, isAnalyzing, onHighligh
     // Highlight text in essay if element has text
     const element = getElement(baseElementId, index)
     console.log("[ArgumentativeFeedback] Retrieved element:", element)
-    
+
     if (element && element.text && onHighlightText) {
       onHighlightText(element.text, element.effectiveness)
     }
+
+    if (!element?.suggestion || !element?.text || !onCorrectionViewed) {
+      return
+    }
+
+    const elementType =
+      (baseElementId === "claim" ? "claims" : baseElementId) as ArgumentElementKey
+
+    const normalizedIndex = index ?? 0
+    onCorrectionViewed({
+      key: `${elementType}-${normalizedIndex}`,
+      elementType,
+      originalText: element.text,
+      correctedText: element.suggestion,
+    })
   }
 
   const handleCardHover = (elementId: string, isHovering: boolean) => {
