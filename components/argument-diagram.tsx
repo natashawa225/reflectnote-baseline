@@ -108,8 +108,8 @@ export function ArgumentDiagram({ analysis, essay, onElementClick }: ArgumentDia
           Visual Argument Structure
         </CardTitle>
         <p className="text-sm">
-          Interactive diagram showing your essay's argumentative structure based on the Crossley model. Missing elements
-          are greyed out.
+        这张图展示了你的议论文结构，以及各个论证要素的表现情况。
+        不同颜色代表不同程度：
         </p>
       </CardHeader>
       <CardContent className="p-6">
@@ -325,10 +325,11 @@ export function ArgumentDiagram({ analysis, essay, onElementClick }: ArgumentDia
           <div className="mt-4 p-4 bg-gradient-to-br from-red-50 to-pink-50 border-2 border-red-200 rounded-lg">
             <h4 className="font-medium text-red-800 mb-2 flex items-center gap-2">
               <AlertTriangle className="h-4 w-4" />
-              Missing Argumentative Elements ⚠️
+              可以补充的论证要素
             </h4>
             <p className="text-red-700 text-sm mb-2">
-              Your essay is missing the following elements from the Crossley model:
+            {/* Your essay is missing the following elements */}
+            你的文章中暂未体现以下论证要素:
             </p>
             <div className="flex flex-wrap gap-2">
               {missingElements.map((element) => (
@@ -338,7 +339,7 @@ export function ArgumentDiagram({ analysis, essay, onElementClick }: ArgumentDia
               ))}
             </div>
             <p className="text-red-700 text-sm mt-2">
-              These missing elements are shown in grey with dashed borders in the diagram above. 💫
+            建议补充这些要素，以增强论证的完整性与说服力。 
             </p>
           </div>
         )}
@@ -346,7 +347,8 @@ export function ArgumentDiagram({ analysis, essay, onElementClick }: ArgumentDia
         {/* Effectiveness Summary */}
         <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border-2 border-green-200 text-center shadow-md">
-            <h4 className="font-medium text-green-800 mb-1">Effective ✨</h4>
+            {/* effective */}
+            <h4 className="font-medium text-green-800 mb-1">表现优秀</h4>
             <p className="text-3xl font-bold text-green-600">
               {
                 Object.values(analysis.elements)
@@ -354,10 +356,11 @@ export function ArgumentDiagram({ analysis, essay, onElementClick }: ArgumentDia
                   .filter((el) => el.effectiveness === "Effective").length
               }
             </p>
-            <p className="text-xs text-green-700">Strong elements</p>
+            <p className="text-xs text-green-700">清晰且论述充分</p>
           </div>
           <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 p-4 rounded-lg border-2 border-yellow-200 text-center shadow-md">
-            <h4 className="font-medium text-yellow-800 mb-1">Adequate 💫</h4>
+            {/* adequate */}
+            <h4 className="font-medium text-yellow-800 mb-1">基本达标</h4> 
             <p className="text-3xl font-bold text-yellow-600">
               {
                 Object.values(analysis.elements)
@@ -365,10 +368,11 @@ export function ArgumentDiagram({ analysis, essay, onElementClick }: ArgumentDia
                   .filter((el) => el.effectiveness === "Adequate").length
               }
             </p>
-            <p className="text-xs text-yellow-700">Good but improvable</p>
+            <p className="text-xs text-yellow-700">内容合适，但仍有提升空间</p>
           </div>
           <div className="bg-gradient-to-br from-red-50 to-red-100 p-4 rounded-lg border-2 border-red-200 text-center shadow-md">
-            <h4 className="font-medium text-red-800 mb-1">Ineffective ⚠️</h4>
+            {/* ineffective */}
+            <h4 className="font-medium text-red-800 mb-1">需要加强</h4>
             <p className="text-3xl font-bold text-red-600">
               {
                 Object.values(analysis.elements)
@@ -376,10 +380,11 @@ export function ArgumentDiagram({ analysis, essay, onElementClick }: ArgumentDia
                   .filter((el) => el.effectiveness === "Ineffective").length
               }
             </p>
-            <p className="text-xs text-red-700">Need improvement</p>
+            <p className="text-xs text-red-700">表达不够清晰和论述较弱</p>
           </div>
           <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded-lg border-2 border-gray-200 text-center shadow-md">
-            <h4 className="font-medium text-gray-800 mb-1">Missing 🔍</h4>
+            {/* missing */}
+            <h4 className="font-medium text-gray-800 mb-1">尚未体现</h4> 
             <p className="text-3xl font-bold text-gray-600">
               {
                 Object.values(analysis.elements)
@@ -387,7 +392,7 @@ export function ArgumentDiagram({ analysis, essay, onElementClick }: ArgumentDia
                   .filter((el) => el.effectiveness === "Missing").length
               }
             </p>
-            <p className="text-xs text-gray-700">Not found</p>
+            <p className="text-xs text-gray-700">文中暂未看到相关内容</p>
           </div>
         </div>
       </CardContent>

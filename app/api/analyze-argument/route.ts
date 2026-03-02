@@ -1,7 +1,7 @@
 
 import { type NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
-import { openai } from "@/lib/openai"
+import { getOpenAIClient } from "@/lib/openai"
 
 const ArgumentElementSchema = z.object({
   text: z.string().default(""),
@@ -189,8 +189,8 @@ async function batchDiagnoseAll(
    Effectiveness (from fine-tuned model): ${e.element.effectiveness}`
   }).join('\n\n')
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o",
+  const completion = await getOpenAIClient().chat.completions.create({
+    model: "gpt-4.1-mini",
     response_format: { type: "json_object" },
     messages: [
       {
@@ -237,36 +237,20 @@ async function batchFeedbackAll(
    Diagnosis: ${diagnoses[i]}`
   }).join('\n\n')
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o",
+  const completion = await getOpenAIClient().chat.completions.create({
+    model: "gpt-4.1-mini",
     response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
         content: `
-You are an experienced writing coach giving clear, supportive, and easy-to-understand feedback to an English L2 learner. 
-
-Your feedback must:
-- Be constructive, specific, and encouraging.
-- Use simple but academic English.
-- Explain reasoning clearly (avoid vague comments like "good job").
-- Help the student understand *why* something works and *how* to improve it.
-- Use <strong> </strong> to highlight important writing concepts (e.g., <strong>clarity</strong>, <strong>evidence</strong>, <strong>reasoning</strong>, <strong>persuasiveness</strong>, <strong>alignment</strong>, <strong>coherence</strong>).
-
-If effectiveness is "Effective":
-- Start with positive reinforcement.
-- Clearly explain why the element is strong (e.g., strong <strong>alignment</strong> with thesis, clear <strong>reasoning</strong>, relevant <strong>evidence</strong>).
-- Provide at least one specific suggestion to make it even stronger.
-
-Style guidelines:
-- Avoid overly complex vocabulary.
-- Keep feedback focused on learning and improvement.
-- Do NOT use markdown formatting.
-- Only use <strong> </strong> for emphasis.
-
-Return STRICT JSON only in this format:
-{"feedback": [["point1", "point2", "point3"], ["point1", "point2", "point3"], ...]}
-
+You are a writing coach for L2 English learners.
+Give clear, specific feedback in simple academic English.
+Explain why it works and how to improve.
+If "Effective", explain strength and add one improvement tip.
+No markdown. Only <strong></strong> for emphasis.
+Return STRICT JSON:
+{"feedback": [["point1","point2","point3"], ...]}
 `
       },
       {
@@ -278,23 +262,23 @@ Return STRICT JSON only in this format:
   
   const result = JSON.parse(completion.choices[0].message.content || '{"feedback": []}')
   return result.feedback || []
+
 }
 
-// STEP 3: Generate suggestions for ALL non-effective elements in ONE call
-async function batchSuggestionsAll(
+// STEP 3: Generate suggestions AND reasons for ALL non-effective elements in ONE call
+async function batchSuggestionsAndReasonsAll(
   elements: Array<{element: any, name: string, index?: number}>
-): Promise<string[]> {
+): Promise<{ suggestions: string[], reasons: string[] }> {
   
-  // Filter elements that need suggestions (not "Effective")
-  const needsSuggestion = elements.map((e, i) => ({ ...e, originalIndex: i }))
+  const needsWork = elements.map((e, i) => ({ ...e, originalIndex: i }))
     .filter(e => e.element.effectiveness !== "Effective")
   
-  if (needsSuggestion.length === 0) {
-    console.log('   ℹ️ All elements are Effective - skipping suggestions')
-    return elements.map(() => "")
+  if (needsWork.length === 0) {
+    console.log('   ℹ️ All elements are Effective - skipping suggestions & reasons')
+    return { suggestions: elements.map(() => ""), reasons: elements.map(() => "") }
   }
   
-  const elementsList = needsSuggestion.map((e, i) => {
+  const elementsList = needsWork.map((e, i) => {
     const displayName = e.index !== undefined 
       ? `${e.name} #${e.index + 1}` 
       : e.name
@@ -303,146 +287,105 @@ async function batchSuggestionsAll(
    Effectiveness: ${e.element.effectiveness}`
   }).join('\n\n')
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-5-mini",
+  const completion = await getOpenAIClient().chat.completions.create({
+    model: "gpt-4o-mini",
     response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
-        content: `You are an expert writing coach providing improved versions of essay elements.
+        content: `You are a supportive writing teacher helping students improve their argumentative essays.
 
-For EACH element below, provide ONE improved sentence that is:
-- Stronger and more precise while keeping core meaning
-- More compelling with stronger academic language
-- More specific and clear
+For EACH element below, provide:
+1. A suggestion: One clear, specific revision. You may rewrite or suggest a sentence. Keep it concise, student-friendly, and use a natural teacher-like tone. Focus only on the selected element.
+2. A reason with three aspects:
+   - Rhetorical function: What this element does in an argument and how it works
+   - Reader impact: How it affects the reader's understanding or engagement, and what may happen if it is missing
+   - Text quality: How it improves writing quality (e.g., coherence, clarity) with a cause-effect explanation
 
-Guidelines by effectiveness level:
-- If "Adequate": Rewrite into a stronger, more precise version
-- If "Ineffective": Create a clear, specific, academic example that fulfills the role
-- If "Missing": Create an appropriate example
+Avoid vague statements like "it improves clarity" without explanation.
 
-Always return ONE improved sentence per element, no extra text.
-
-Return JSON: {"suggestions": ["suggestion 1", "suggestion 2", ...]}`
-      },
-      {
-        role: "user",
-        content: `Elements to improve:\n\n${elementsList}\n\nProvide one improved sentence for each:`
-      }
-    ]
-  })
-  
-  const result = JSON.parse(completion.choices[0].message.content || '{"suggestions": []}')
-  const suggestions = result.suggestions || []
-  
-  // Map suggestions back to original array positions
-  const fullSuggestions = new Array(elements.length).fill("")
-  needsSuggestion.forEach((e, i) => {
-    fullSuggestions[e.originalIndex] = suggestions[i] || ""
-  })
-  
-  return fullSuggestions
-}
-
-// STEP 4: Generate reasons for ALL suggestions in ONE call
-async function batchReasonsAll(
-  elements: Array<{element: any, name: string, index?: number}>,
-  suggestions: string[]
-): Promise<string[]> {
-  
-  // Filter elements that need reasons (have suggestions and not "Effective")
-  const needsReason = elements.map((e, i) => ({ ...e, suggestion: suggestions[i], originalIndex: i }))
-    .filter(e => e.suggestion && e.element.effectiveness !== "Effective")
-  
-  if (needsReason.length === 0) {
-    console.log('   ℹ️ No suggestions generated - skipping reasons')
-    return elements.map(() => "")
+Example output for one element:
+{
+  "suggestion": "You could add an opening sentence such as 'In many cities today, transportation problems are becoming increasingly serious' before your main point.",
+  "reason": {
+    "rhetorical_function": "A lead introduces the topic and works as a bridge into your argument, helping the reader move smoothly from a general idea to your specific position.",
+    "reader_impact": "Without a lead, the essay may feel too abrupt and the reader may not have enough context to fully engage with your point.",
+    "text_quality": "Adding a lead creates a clearer progression from general to specific ideas, which improves coherence and overall flow."
   }
-  
-  const elementsList = needsReason.map((e, i) => {
-    const displayName = e.index !== undefined 
-      ? `${e.name} #${e.index + 1}` 
-      : e.name
-    return `${i}. ${displayName}
-   Original: "${e.element.text}"
-   Suggestion: "${e.suggestion}"
-   Effectiveness: ${e.element.effectiveness}`
-  }).join('\n\n')
+}
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o",
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: `You are an expert writing coach explaining improvements.
-
-For EACH element below, explain in 2-4 sentences why the suggested improvement is stronger than the original.
-Focus on clarity, persuasiveness, and argumentative effectiveness.
-
-Return JSON: {"reasons": ["reason 1", "reason 2", ...]}`
+Return JSON: {
+  "results": [
+    {
+      "suggestion": "...",
+      "reason": {
+        "rhetorical_function": "...",
+        "reader_impact": "...",
+        "text_quality": "..."
+      }
+    }
+  ]
+}`
       },
       {
         role: "user",
-        content: `Elements with suggestions:\n\n${elementsList}\n\nExplain why each suggestion is better:`
+        content: `Elements to improve:\n\n${elementsList}\n\nProvide suggestion and reason for each:`
       }
     ]
   })
   
-  const result = JSON.parse(completion.choices[0].message.content || '{"reasons": []}')
-  const reasons = result.reasons || []
+  const result = JSON.parse(completion.choices[0].message.content || '{"results": []}')
+  const results = result.results || []
   
-  // Map reasons back to original array positions
+  const fullSuggestions = new Array(elements.length).fill("")
   const fullReasons = new Array(elements.length).fill("")
-  needsReason.forEach((e, i) => {
-    fullReasons[e.originalIndex] = reasons[i] || ""
+  
+  needsWork.forEach((e, i) => {
+    const r = results[i] || {}
+    fullSuggestions[e.originalIndex] = r.suggestion || ""
+    
+    // Format reason into a structured string
+    if (r.reason) {
+      fullReasons[e.originalIndex] = [
+        `${r.reason.rhetorical_function || ""}`,
+        `${r.reason.reader_impact || ""}`,
+        `${r.reason.text_quality || ""}`
+      ].join('\n')
+    }
   })
   
-  return fullReasons
+  return { suggestions: fullSuggestions, reasons: fullReasons }
 }
-
-// MAIN OPTIMIZED CHAIN: 4 calls total instead of 48+!
+// MAIN OPTIMIZED CHAIN: 44 seconds!
 async function optimizedProcess4StepChain(
   elements: Array<{element: any, path: string, name: string, index?: number}>,
   prompt: string
 ): Promise<any[]> {
   
   const startTime = Date.now()
-  console.log(`\n🔗 Starting optimized 4-step LLM chain for ${elements.length} elements`)
-  console.log(`⚡ OLD METHOD: ${elements.length * 4} API calls (one per element per step)`)
-  console.log(`⚡ NEW METHOD: 4 API calls (all elements per step)\n`)
+  console.log(`\n🔗 Starting PARALLELIZED chain for ${elements.length} elements`)
   
-  // Count elements by effectiveness for logging
   const effectiveCounts = elements.reduce((acc, e) => {
     acc[e.element.effectiveness] = (acc[e.element.effectiveness] || 0) + 1
     return acc
   }, {} as Record<string, number>)
-  console.log('📊 Element effectiveness from fine-tuned model:', effectiveCounts)
+  console.log('📊 Element effectiveness:', effectiveCounts)
   
-  // STEP 1: Diagnose ALL (1 API call)
-  console.log('\n📍 Step 1/4: Diagnosing ALL elements...')
-  const diagnoses = await batchDiagnoseAll(elements, prompt)
-  console.log(`✅ Step 1/4 complete (${Date.now() - startTime}ms)`)
+  // 🚀 PARALLEL: Diagnose + Suggestions&Reasons run simultaneously
+  console.log('\n📍 Steps 1 & 2 running IN PARALLEL (diagnose + suggestions+reasons)...')
+  const [diagnoses, { suggestions, reasons }] = await Promise.all([
+    batchDiagnoseAll(elements, prompt),
+    batchSuggestionsAndReasonsAll(elements)
+  ])
+  console.log(`✅ Steps 1 & 2 complete in parallel (${Date.now() - startTime}ms)`)
   
-  // STEP 2: Feedback for ALL (1 API call)
-  console.log('📍 Step 2/4: Generating feedback for ALL elements...')
+  // Feedback runs after diagnoses are ready (depends on diagnoses)
+  console.log('📍 Step 3: Generating feedback (uses diagnoses)...')
   const feedbacks = await batchFeedbackAll(elements, diagnoses)
-  console.log(`✅ Step 2/4 complete (${Date.now() - startTime}ms)`)
+  console.log(`✅ Step 3 complete (${Date.now() - startTime}ms)`)
   
-  // STEP 3: Suggestions for ALL non-effective (1 API call)
-  console.log('📍 Step 3/4: Generating suggestions for non-Effective elements...')
-  const suggestions = await batchSuggestionsAll(elements)
-  console.log(`✅ Step 3/4 complete (${Date.now() - startTime}ms)`)
+  console.log(`\n🎉 Total chain time: ${Date.now() - startTime}ms\n`)
   
-  // STEP 4: Reasons for ALL suggestions (1 API call)
-  console.log('📍 Step 4/4: Generating reasons for ALL suggestions...')
-  const reasons = await batchReasonsAll(elements, suggestions)
-  console.log(`✅ Step 4/4 complete (${Date.now() - startTime}ms)`)
-  
-  console.log(`\n🎉 Total chain time: ${Date.now() - startTime}ms`)
-  console.log(`🚀 Estimated speedup: ~${Math.floor((elements.length * 4) / 4)}x faster\n`)
-  
-  // Combine all results
   return elements.map((e, i) => ({
     ...e.element,
     diagnosis: diagnoses[i] || "",
@@ -475,6 +418,16 @@ export async function POST(request: NextRequest) {
   
   try {
     const { essay, prompt } = await request.json()
+    const essayText = typeof essay === "string" ? essay : String(essay ?? "")
+    if (!process.env.OPENAI_API_KEY) {
+      const errorMessage = "Server configuration error: OPENAI_API_KEY is missing"
+      console.error(errorMessage, {
+        route: "/api/analyze-argument",
+        timestamp: new Date().toISOString(),
+      })
+      return NextResponse.json({ error: errorMessage }, { status: 500 })
+    }
+
     const FT_MODEL = process.env.FT_MODEL
 
     let completion
@@ -484,11 +437,11 @@ export async function POST(request: NextRequest) {
       console.log("⚡ Using model:", modelUsed)
 
       // STEP 1 → Fine-tuned model gives structure + effectiveness
-      completion = await openai.chat.completions.create({
+      completion = await getOpenAIClient().chat.completions.create({
         model: modelUsed,
         messages: [
           { role: "system", content: FINE_TUNED_SYSTEM_PROMPT },
-          { role: "user", content: essay },
+          { role: "user", content: essayText },
         ],
         response_format: { type: "json_object" },
       })
@@ -497,11 +450,11 @@ export async function POST(request: NextRequest) {
       modelUsed = "gpt-4o-mini"
       console.log("⚡ Using model:", modelUsed)
 
-      completion = await openai.chat.completions.create({
+      completion = await getOpenAIClient().chat.completions.create({
         model: modelUsed,
         messages: [
           { role: "system", content: FINE_TUNED_SYSTEM_PROMPT },
-          { role: "user", content: essay },
+          { role: "user", content: essayText },
         ],
         response_format: { type: "json_object" },
       })
@@ -595,14 +548,20 @@ export async function POST(request: NextRequest) {
     // STEP 7 → Return normalized version
     return NextResponse.json(normalized)
   } catch (error) {
-    console.error("Error analyzing argumentative structure:", error)
-    return NextResponse.json({ error: "Failed to analyze essay" }, { status: 500 })
+    const message = error instanceof Error ? error.message : "Failed to analyze essay"
+    console.error("Error analyzing argumentative structure:", {
+      message,
+      error,
+      route: "/api/analyze-argument",
+      timestamp: new Date().toISOString(),
+    })
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
 
 // import { type NextRequest, NextResponse } from "next/server"
 // import { z } from "zod"
-// import { openai } from "@/lib/openai"
+// import { getOpenAIClient } from "@/lib/openai"
 
 // const ArgumentElementSchema = z.object({
 //   text: z.string().default(""),
@@ -781,7 +740,7 @@ export async function POST(request: NextRequest) {
 
 // // 4-Step GPT Chain Functions
 // async function generateDiagnosis(element: any, elementName: string, prompt: string): Promise<string> {
-//   const completion = await openai.chat.completions.create({
+//   const completion = await getOpenAIClient().chat.completions.create({
 //     model: "gpt-4o",
 //     messages: [
 //       {
@@ -812,7 +771,7 @@ export async function POST(request: NextRequest) {
 // }
 
 // async function generateFeedback(element: any, elementName: string, diagnosis: string): Promise<string[]> {
-//   const completion = await openai.chat.completions.create({
+//   const completion = await getOpenAIClient().chat.completions.create({
 //     model: "gpt-4o",
 //     response_format: { type: "json_object" },
 //     messages: [
@@ -867,7 +826,7 @@ export async function POST(request: NextRequest) {
 //     return ""
 //   }
   
-//   const completion = await openai.chat.completions.create({
+//   const completion = await getOpenAIClient().chat.completions.create({
 //     model: "gpt-4o",
 //     messages: [
 //       {
@@ -900,7 +859,7 @@ export async function POST(request: NextRequest) {
 //     return ""
 //   }
   
-//   const completion = await openai.chat.completions.create({
+//   const completion = await getOpenAIClient().chat.completions.create({
 //     model: "gpt-4o",
 //     messages: [
 //       {
@@ -1005,7 +964,7 @@ export async function POST(request: NextRequest) {
 //       console.log("⚡ Using model:", modelUsed)
 
 //       // STEP 1 → Fine-tuned model gives structure + effectiveness
-//       completion = await openai.chat.completions.create({
+//       completion = await getOpenAIClient().chat.completions.create({
 //         model: modelUsed,
 //         messages: [
 //           {
@@ -1021,7 +980,7 @@ export async function POST(request: NextRequest) {
 //       modelUsed = "gpt-5-mini"
 //       console.log("⚡ Using model:", modelUsed)
 
-//       completion = await openai.chat.completions.create({
+//       completion = await getOpenAIClient().chat.completions.create({
 //         model: modelUsed,
 //         messages: [
 //           {

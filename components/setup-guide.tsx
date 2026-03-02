@@ -17,7 +17,7 @@ export function SetupGuide() {
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-blue-800">
             <Server className="h-5 w-5" />
-            How to Read the Diagram
+            如何阅读这张结构图?
           </CardTitle>
           <Button
             variant="ghost"
@@ -26,7 +26,7 @@ export function SetupGuide() {
             className="text-blue-700 hover:text-blue-900"
           >
             {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            {isExpanded ? "Hide" : "Show"} Instructions
+            {isExpanded ? "隐藏" : "显示"} 说明
           </Button>
         </div>
       </CardHeader>
@@ -35,7 +35,7 @@ export function SetupGuide() {
         <Alert>
           <Target className="h-4 w-4" />
           <AlertDescription>
-            Click on elements in the diagram below to see detailed feedback and suggestions for improvement.
+          点击下方结构图中的各个部分，可以查看详细反馈和改进建议。
           </AlertDescription>
         </Alert>
 
@@ -47,16 +47,16 @@ export function SetupGuide() {
             </h4>
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <Badge className="bg-green-100 text-green-800 border-green-200">Effective</Badge>
-                <span className="text-xs">Strong and clear. Your argument element is complete, well explained, and supported by evidence</span>
+                <Badge className="bg-green-100 text-green-800 border-green-200">Effective（绿色）有效</Badge>
+                <span className="text-xs">论证清晰有力。该部分完整、解释清楚，并有充分证据支持。</span>
               </div>
               <div className="flex items-center gap-2">
-                <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Adequate</Badge>
-                <span className="text-xs">Present, but could be better. Some details may be missing or unclear, or evidence is weak</span>
+                <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Adequate（黄色）基本有效</Badge>
+                <span className="text-xs">内容存在，但可以更好。可能有细节不清楚，或证据不够充分。</span>
               </div>
               <div className="flex items-center gap-2">
-                <Badge className="bg-red-100 text-red-800 border-red-200">Ineffective</Badge>
-                <span className="text-xs">Needs improvement. The element is vague, unsupported, or does not clearly contribute to your argument</span>
+                <Badge className="bg-red-100 text-red-800 border-red-200">Ineffective（红色）需要改进</Badge>
+                <span className="text-xs">表达不清楚，缺少证据支持，或没有清楚地帮助你的论点。</span>
               </div>
             </div>
           </div>
@@ -64,16 +64,16 @@ export function SetupGuide() {
           <div className="p-4 bg-white rounded-lg border border-blue-200">
               <div className="flex items-center gap-2 mb-2">
                 <TableOfContents className="h-4 w-4 text-blue-600" />
-                <h4 className="font-medium">Argument Elements:</h4>
+                <h4 className="font-medium">论证要素说明:</h4>
               </div>
               <ul className="list-disc list-inside text-sm text-gray-600 space-y-2">
-                <li><strong>Lead:</strong> The opening sentence. It should grab attention and introduce the topic.</li>
-                <li><strong>Position:</strong> Your main answer to the prompt. It should be clear, direct, and act as your thesis.</li>
-                <li><strong>Claim:</strong> A reason supporting your position. It should be specific and relevant.</li>
-                <li><strong>Counterclaim:</strong> An opposing viewpoint. It should be reasonable and challenge your position.</li>
-                <li><strong>Rebuttal:</strong> Your response to the counterclaim. It should clearly explain why the opposing view is incorrect.</li>
-                <li><strong>Evidence:</strong> Facts, examples, or data that support your claim. They should be relevant and objective.</li>
-                <li><strong>Conclusion:</strong> A summary of your main points. It should restate your position strongly.</li>
+                <li><strong>Lead（开头）:</strong> 文章的第一句话。应该吸引读者注意，并介绍主题。</li>
+                <li><strong>Position（立场）:</strong>你对题目的主要回答。应该清楚、直接，相当于你的中心论点。</li>
+                <li><strong>Claim（论点）:</strong>支持你立场的一个理由。应该具体、相关。</li>
+                <li><strong>Counterclaim（反方观点）:</strong>与您立场相反的观点。应该合理，并对你的立场提出挑战。</li>
+                <li><strong>Rebuttal（反驳）:</strong> 你对反方观点的回应。应该清楚说明为什么对方观点不正确。</li>
+                <li><strong>Evidence（证据）:</strong>支持论点的事实、例子或数据。应该相关、客观。</li>
+                <li><strong>Conclusion（结论）:</strong> 总结主要观点，并再次有力地重申你的立场。</li>
             </ul>
             </div>
 

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { openai } from "@/lib/openai"
+import { getOpenAIClient } from "@/lib/openai"
 import { assertSupabaseAdminConfig, supabaseAdmin } from "@/lib/supabaseAdmin"
 
 type IssueElementType = "claim" | "evidence" | "rebuttal"
@@ -104,7 +104,7 @@ export async function POST(req: Request) {
       "- Use this title exactly: Your Revision Insights",
     ].join("\n")
 
-    const completion = await openai.responses.create({
+    const completion = await getOpenAIClient().responses.create({
       model: "gpt-4o",
       input: prompt,
       temperature: 0.4,

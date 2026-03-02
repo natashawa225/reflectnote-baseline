@@ -1,5 +1,17 @@
 import type { AnalysisResult, LexicalAnalysis } from "./types"
 
+async function getErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const data = await response.json()
+    if (typeof data?.error === "string" && data.error) {
+      return data.error
+    }
+  } catch {
+    // Ignore JSON parse failures and use fallback message.
+  }
+  return fallback
+}
+
 export async function analyzeArgumentativeStructure(essay: string, prompt: string):  Promise<AnalysisResult> {
   try {
     const response = await fetch("/api/analyze-argument", {
@@ -11,7 +23,8 @@ export async function analyzeArgumentativeStructure(essay: string, prompt: strin
     })
 
     if (!response.ok) {
-      throw new Error("Failed to analyze essay")
+      const message = await getErrorMessage(response, `Failed to analyze essay (status ${response.status})`)
+      throw new Error(message)
     }
 
     return await response.json()
@@ -34,7 +47,8 @@ export async function analyzeLexicalFeatures(essay: string): Promise<LexicalAnal
     })
 
     if (!response.ok) {
-      throw new Error("Failed to analyze lexical features")
+      const message = await getErrorMessage(response, `Failed to analyze lexical features (status ${response.status})`)
+      throw new Error(message)
     }
 
     return await response.json()

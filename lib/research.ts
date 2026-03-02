@@ -20,11 +20,17 @@ export interface SessionIssue {
 }
 
 async function researchRequest<T>(action: string, payload: Record<string, unknown>): Promise<T> {
-  const response = await fetch("/api/research", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, payload }),
-  })
+  let response: Response
+  try {
+    response = await fetch("/api/research", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, payload }),
+    })
+  } catch (error) {
+    console.error(`[researchRequest] network error during ${action}:`, error)
+    throw new Error(`Research API ${action} network error`)
+  }
 
   const json = await response.json().catch(() => null)
   if (!response.ok) {

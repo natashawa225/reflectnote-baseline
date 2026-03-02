@@ -84,10 +84,10 @@ export async function POST(req: Request) {
     if (action === "saveDraftSnapshot") {
       const sessionId = String(payload?.sessionId ?? "")
       const stage = payload?.stage as DraftStage
-      const draftText = String(payload?.draftText ?? "")
+      const draftText = typeof payload?.draftText === "string" ? payload.draftText : ""
 
-      if (!sessionId || !stage || !draftText) {
-        return NextResponse.json({ error: "sessionId, stage, and draftText are required" }, { status: 400 })
+      if (!sessionId || !stage) {
+        return NextResponse.json({ error: "sessionId and stage are required" }, { status: 400 })
       }
 
       const { error } = await supabaseAdmin.from("draft_snapshots").insert({

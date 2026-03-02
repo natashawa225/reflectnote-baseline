@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
 import { EssayEditor } from "@/components/essay-editor"
 import { FeedbackPanel } from "@/components/feedback-panel"
@@ -20,7 +21,7 @@ import {
   type SessionIssue,
 } from "@/lib/research"
 import type { AnalysisResult, Highlight, ArgumentElementKey } from "@/lib/types"
-import { Sparkles, BookOpen } from "lucide-react"
+import { Sparkles, BookOpen, AlertCircle } from "lucide-react"
 
 type RevisionData = {
   totalEditsAfterAnalyze: number
@@ -58,6 +59,7 @@ export default function ArgumentativeWritingAssistant() {
   const [revisionInsights, setRevisionInsights] = useState("")
   const [revisionData, setRevisionData] = useState<RevisionData | null>(null)
   const [showInsightsModal, setShowInsightsModal] = useState(false)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
   const lastPersistedEssayRef = useRef("")
 
   const normalizeForMeaningfulChange = (value: string): string => {
@@ -140,32 +142,46 @@ export default function ArgumentativeWritingAssistant() {
   }, [essay, sessionId, sessionReady, hasSubmittedInitialDraft, isSubmitting])
 
   const handleAnalyze = async () => {
-    if (!essay.trim()) return
-
+    setAnalysisError(null)
     setIsAnalyzing(true)
     setIsPanelOpen(true)
+    console.log("Analyze Essay clicked", {
+      essayLength: essay.length,
+      hasPrompt: Boolean(selectedPrompt),
+      timestamp: new Date().toISOString(),
+    })
 
     try {
       if (sessionReady && sessionId && !hasSubmittedInitialDraft) {
-        await saveDraftSnapshot({
-          sessionId,
-          stage: "initial",
-          draftText: essay,
-        })
-        await logEvent({
-          sessionId,
-          eventType: "initial_draft",
-        })
-        setHasSubmittedInitialDraft(true)
-        lastPersistedEssayRef.current = normalizeForMeaningfulChange(essay)
+        void (async () => {
+          try {
+            await saveDraftSnapshot({
+              sessionId,
+              stage: "initial",
+              draftText: essay,
+            })
+            await logEvent({
+              sessionId,
+              eventType: "initial_draft",
+            })
+            setHasSubmittedInitialDraft(true)
+            lastPersistedEssayRef.current = normalizeForMeaningfulChange(essay)
+          } catch (telemetryError) {
+            console.error("Initial draft telemetry failed. Continuing analysis:", telemetryError)
+          }
+        })()
       }
 
       const argResult = await analyzeArgumentativeStructure(essay, selectedPrompt)
       setArgumentAnalysis(argResult)
 
       if (sessionReady && sessionId) {
-        const mappedIssues = await replaceSessionIssues(sessionId, argResult)
-        setIssuesByKey(mappedIssues)
+        try {
+          const mappedIssues = await replaceSessionIssues(sessionId, argResult)
+          setIssuesByKey(mappedIssues)
+        } catch (telemetryError) {
+          console.error("Failed to persist analysis issues. Showing analysis anyway:", telemetryError)
+        }
       }
 
       const newHighlights: Highlight[] = []
@@ -212,7 +228,9 @@ export default function ArgumentativeWritingAssistant() {
 
       setHighlights(newHighlights)
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Analysis failed. Please try again."
       console.error("Analysis failed:", error)
+      setAnalysisError(message)
     } finally {
       setIsAnalyzing(false)
     }
@@ -297,8 +315,6 @@ export default function ArgumentativeWritingAssistant() {
     setActiveSubTab(subTab)
   }
 
-  const wordCount = essay.trim().split(/\s+/).filter(Boolean).length
-
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b bg-card">
@@ -330,6 +346,14 @@ export default function ArgumentativeWritingAssistant() {
           className="flex-1 flex flex-col h-full p-4 space-y-4"
           style={{ width: isPanelOpen ? `calc(100% - ${panelWidth}px)` : "100%" }}
         >
+          {analysisError && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Analysis request failed</AlertTitle>
+              <AlertDescription>{analysisError}</AlertDescription>
+            </Alert>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
