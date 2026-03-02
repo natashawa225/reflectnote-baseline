@@ -311,7 +311,6 @@ export default function ArgumentativeWritingAssistant() {
             <div className="flex items-center gap-3">
               <Button
                 onClick={handleAnalyze}
-                disabled={!sessionReady || isAnalyzing || wordCount < 200}
                 className="flex items-center gap-2"
               >
                 <Sparkles className="h-4 w-4" />
