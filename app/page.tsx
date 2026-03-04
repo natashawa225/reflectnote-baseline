@@ -1,7 +1,7 @@
 "use client"
 
 import { PromptSelector } from "@/components/prompt-selector"
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -9,31 +9,47 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
 import { EssayEditor } from "@/components/essay-editor"
 import { FeedbackPanel } from "@/components/feedback-panel"
+import type { FeedbackLevel } from "@/lib/interaction-logs-server"
+import { getOrCreateSessionId } from "@/lib/deviceId"
 import { analyzeArgumentativeStructure } from "@/lib/analysis"
-import { getOrCreateSessionId } from "@/lib/session"
-import {
-  ensureSession,
-  hasInitialDraftLog,
-  logEvent,
-  markSessionSubmitted,
-  replaceSessionIssues,
-  saveDraftSnapshot,
-  type SessionIssue,
-} from "@/lib/research"
 import type { AnalysisResult, Highlight, ArgumentElementKey } from "@/lib/types"
-import { Sparkles, BookOpen, AlertCircle } from "lucide-react"
+import { Sparkles, BookOpen, AlertCircle, Send } from "lucide-react"
 
-type RevisionData = {
+type InteractionEventType =
+  | "initial_draft"
+  | "analyze_clicked"
+  | "suggestion_revealed"
+  | "edit_detected"
+  | "final_submission"
+
+interface RevisionBehaviorData {
   totalEditsAfterAnalyze: number
-  totalCorrectedViewed: number
   feedbackLevelCounts: {
     level1: number
     level2: number
     level3: number
   }
   revisionWindowMinutes: number
-  elementTypeEngagement: Record<string, number>
-  viewedCorrectionsBeforeEditing: boolean
+  thesisChangedSignificantly: boolean
+  claimEvidenceStructureChanged: boolean
+  mostRevisedSections: string[]
+  firstDraftWordCount: number
+  finalDraftWordCount: number
+  firstToFinalWordDelta: number
+  totalLogsAnalyzed: number
+}
+
+interface IssueRegistryRow {
+  issueId: string
+  initialText: string
+}
+
+function normalizeElementType(raw: string): string {
+  const value = raw.trim().toLowerCase()
+  if (value === "claims") return "claim"
+  if (value === "evidences") return "evidence"
+  if (value === "counterclaim" || value === "counterclaims") return "rebuttal"
+  return value
 }
 
 export default function ArgumentativeWritingAssistant() {
@@ -41,6 +57,11 @@ export default function ArgumentativeWritingAssistant() {
   const [isPanelOpen, setIsPanelOpen] = useState(false)
   const [panelWidth, setPanelWidth] = useState(480)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [isSubmitted, setIsSubmitted] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [hasLoggedInitialDraft, setHasLoggedInitialDraft] = useState(false)
+
+  
   const [argumentAnalysis, setArgumentAnalysis] = useState<AnalysisResult | null>(null)
   const [highlights, setHighlights] = useState<Highlight[]>([])
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
@@ -51,40 +72,54 @@ export default function ArgumentativeWritingAssistant() {
     effectiveness: string
   } | null>(null)
   const [selectedPrompt, setSelectedPrompt] = useState<string>("")
-  const [sessionId, setSessionId] = useState("")
+  const [sessionId, setSessionId] = useState<string | null>(null)
   const [sessionReady, setSessionReady] = useState(false)
   const [hasSubmittedInitialDraft, setHasSubmittedInitialDraft] = useState(false)
-  const [issuesByKey, setIssuesByKey] = useState<Record<string, SessionIssue>>({})
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [revisionInsights, setRevisionInsights] = useState("")
-  const [revisionData, setRevisionData] = useState<RevisionData | null>(null)
+  const [revisionInsights, setRevisionInsights] = useState<string>("")
+  const [revisionData, setRevisionData] = useState<RevisionBehaviorData | null>(null)
+  const [analyzeClickedAt, setAnalyzeClickedAt] = useState<string | null>(null)
+
+  const [issueRegistry, setIssueRegistry] = useState<Record<string, IssueRegistryRow>>({})
+
+  const editDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  
+  const lastEditLoggedEssayRef = useRef("")
+
   const [showInsightsModal, setShowInsightsModal] = useState(false)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
   const lastPersistedEssayRef = useRef("")
-
-  const normalizeForMeaningfulChange = (value: string): string => {
-    return value.replace(/\s+/g, " ").trim()
-  }
+  const [nowMs, setNowMs] = useState(Date.now())
 
   useEffect(() => {
     const id = getOrCreateSessionId()
-    if (!id) return
-
-    const bootstrapSession = async () => {
-      try {
-        await ensureSession(id)
-        const initialLogged = await hasInitialDraftLog(id)
-        setHasSubmittedInitialDraft(initialLogged)
-        setSessionReady(true)
-      } catch (error) {
-        console.error("Session bootstrap failed:", error)
-        setSessionReady(false)
-      }
-    }
-
     setSessionId(id)
-    void bootstrapSession()
   }, [])
+
+  useEffect(() => {
+    if (!sessionId) return
+
+    void fetch("/api/session/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: sessionId,
+        condition: "baseline",
+      }),
+    }).catch((error) => {
+      console.error("Failed to initialize session", error)
+    })
+  }, [sessionId])
+
+  useEffect(() => {
+    if (!analyzeClickedAt || isSubmitted) return
+
+    const interval = setInterval(() => {
+      setNowMs(Date.now())
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [analyzeClickedAt, isSubmitted])
+
 
   const getHighlightColor = (effectiveness: string) => {
     switch (effectiveness) {
@@ -103,86 +138,141 @@ export default function ArgumentativeWritingAssistant() {
     setEssay(nextEssay)
   }
 
+  const logInteraction = useCallback(
+    async ({
+      eventType,
+      issueId,
+      feedbackLevel,
+      metadata,
+    }: {
+      eventType: InteractionEventType
+      issueId?: string | null
+      feedbackLevel?: FeedbackLevel
+      metadata?: Record<string, unknown>
+    }) => {
+      if (!sessionId) return
+
+      try {
+        const response = await fetch("/api/interaction-log", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId,
+            issue_id: issueId ?? null,
+            event_type: eventType,
+            feedback_level: feedbackLevel ?? null,
+            metadata: metadata ?? null,
+          }),
+        })
+        if (!response.ok) {
+          const failure = await response.json().catch(() => null)
+          throw new Error(failure?.error || `Failed to log interaction (${response.status})`)
+        }
+      } catch (error) {
+        console.error("Failed to log interaction", error)
+        throw error
+      }
+    },
+    [sessionId],
+  )
+
+  const insertDraftSnapshot = useCallback(
+    async ({ stage, draftText, issueId }: { stage: string; draftText: string; issueId?: string | null }) => {
+      if (!sessionId) return
+
+      try {
+        const response = await fetch("/api/draft-snapshot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId,
+            issue_id: issueId ?? null,
+            stage,
+            draft_text: draftText,
+          }),
+        })
+        if (!response.ok) {
+          const failure = await response.json().catch(() => null)
+          throw new Error(failure?.error || `Failed to insert draft snapshot (${response.status})`)
+        }
+      } catch (error) {
+        console.error("Failed to insert draft snapshot", error)
+        throw error
+      }
+    },
+    [sessionId],
+  )
+
   useEffect(() => {
-    if (!sessionReady || !sessionId || !hasSubmittedInitialDraft) return
-    if (isSubmitting) return
+    if (!sessionId || !analyzeClickedAt || isSubmitted) return
     if (!essay.trim()) return
+    if (essay === lastEditLoggedEssayRef.current) return
 
-    const normalizedEssay = normalizeForMeaningfulChange(essay)
-    if (!normalizedEssay) return
-    if (normalizedEssay === lastPersistedEssayRef.current) return
+    if (editDebounceRef.current) {
+      clearTimeout(editDebounceRef.current)
+    }
 
-    const timer = setTimeout(() => {
-      const settledNormalizedEssay = normalizeForMeaningfulChange(essay)
-      if (!settledNormalizedEssay) return
-      if (settledNormalizedEssay === lastPersistedEssayRef.current) return
-
+    editDebounceRef.current = setTimeout(() => {
       void (async () => {
         try {
           await Promise.all([
-            logEvent({
-              sessionId,
+            logInteraction({
               eventType: "edit_detected",
               metadata: { source: "debounced_edit_tracking" },
             }),
-            saveDraftSnapshot({
-              sessionId,
+            insertDraftSnapshot({
               stage: "after_edit",
               draftText: essay,
             }),
           ])
-          lastPersistedEssayRef.current = settledNormalizedEssay
+          lastEditLoggedEssayRef.current = essay
         } catch (error) {
-          console.error("Failed to persist debounced edit", error)
+          console.error("Failed to persist debounced baseline edit logs", error)
         }
       })()
     }, 1500)
 
-    return () => clearTimeout(timer)
-  }, [essay, sessionId, sessionReady, hasSubmittedInitialDraft, isSubmitting])
+    return () => {
+      if (editDebounceRef.current) {
+        clearTimeout(editDebounceRef.current)
+      }
+    }
+  }, [analyzeClickedAt, essay, insertDraftSnapshot, isSubmitted, logInteraction, sessionId])
 
   const handleAnalyze = async () => {
-    setAnalysisError(null)
+    if (!essay.trim() || isSubmitted) return
+
     setIsAnalyzing(true)
     setIsPanelOpen(true)
-    console.log("Analyze Essay clicked", {
-      essayLength: essay.length,
-      hasPrompt: Boolean(selectedPrompt),
-      timestamp: new Date().toISOString(),
-    })
 
     try {
-      if (sessionReady && sessionId && !hasSubmittedInitialDraft) {
-        void (async () => {
-          try {
-            await saveDraftSnapshot({
-              sessionId,
-              stage: "initial",
-              draftText: essay,
-            })
-            await logEvent({
-              sessionId,
-              eventType: "initial_draft",
-            })
-            setHasSubmittedInitialDraft(true)
-            lastPersistedEssayRef.current = normalizeForMeaningfulChange(essay)
-          } catch (telemetryError) {
-            console.error("Initial draft telemetry failed. Continuing analysis:", telemetryError)
-          }
-        })()
+      if (!hasLoggedInitialDraft) {
+        await Promise.all([
+          logInteraction({
+            eventType: "initial_draft",
+            metadata: { source: "analyze_button_first_submission" },
+          }),
+          insertDraftSnapshot({
+            stage: "initial",
+            draftText: essay,
+          }),
+        ])
+        setHasLoggedInitialDraft(true)
       }
+
+      if (!analyzeClickedAt) {
+        setAnalyzeClickedAt(new Date().toISOString())
+      }
+
+      await logInteraction({
+        eventType: "analyze_clicked",
+        metadata: { source: "analyze_button" },
+      })
+
+      lastEditLoggedEssayRef.current = essay
 
       const argResult = await analyzeArgumentativeStructure(essay, selectedPrompt)
       setArgumentAnalysis(argResult)
-
-      if (sessionReady && sessionId) {
-        try {
-          const mappedIssues = await replaceSessionIssues(sessionId, argResult)
-          setIssuesByKey(mappedIssues)
-        } catch (telemetryError) {
-          console.error("Failed to persist analysis issues. Showing analysis anyway:", telemetryError)
-        }
-      }
 
       const newHighlights: Highlight[] = []
 
@@ -227,63 +317,76 @@ export default function ArgumentativeWritingAssistant() {
       })
 
       setHighlights(newHighlights)
+
+      if (sessionId && newHighlights.length > 0) {
+        const issuesPayload = newHighlights.map((highlight, index) => ({
+          client_key: highlight.id,
+          element_type: normalizeElementType(highlight.subtype ?? highlight.elementId),
+          issue_index: index + 1,
+          initial_text: highlight.text,
+          original_text: highlight.text,
+        }))
+
+        const response = await fetch("/api/issues", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId,
+            issues: issuesPayload,
+          }),
+        })
+
+        if (response.ok) {
+          const payload = (await response.json()) as {
+            rows: Array<{ id: string; client_key: string; initial_text: string }>
+          }
+
+          const nextRegistry: Record<string, IssueRegistryRow> = {}
+          payload.rows.forEach((row) => {
+            nextRegistry[row.client_key] = {
+              issueId: row.id,
+              initialText: row.initial_text,
+            }
+          })
+
+          setIssueRegistry(nextRegistry)
+        }
+      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Analysis failed. Please try again."
-      console.error("Analysis failed:", error)
-      setAnalysisError(message)
+      console.error("Analysis failed", error)
     } finally {
       setIsAnalyzing(false)
     }
   }
 
-  const handleCorrectionViewed = (params: {
-    key: string
-    elementType: ArgumentElementKey
-    originalText: string
-    correctedText: string
-  }) => {
-    if (!sessionReady || !sessionId) return
-
-    const issue = issuesByKey[params.key]
-    if (!issue) return
-
-    void logEvent({
-      sessionId,
-      eventType: "corrected_viewed",
-      issueId: issue.id,
-      metadata: {
-        element_type: params.elementType,
-      },
-    })
-  }
-
-  const handleSubmitSession = async () => {
-    if (!sessionReady || !sessionId || !essay.trim()) return
+  const handleSubmit = async () => {
+    if (!sessionId || !canSubmit || isSubmitting || isSubmitted) return
 
     setIsSubmitting(true)
 
     try {
-      await saveDraftSnapshot({ sessionId, stage: "final", draftText: essay })
-      await markSessionSubmitted(sessionId)
-      await logEvent({ sessionId, eventType: "final_submission" })
-
-      const response = await fetch("/api/reflective-summary", {
+      const response = await fetch("/api/finalize-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify({
+          session_id: sessionId,
+          final_essay_text: essay,
+        }),
       })
 
       if (!response.ok) {
-        throw new Error("Failed to generate reflective summary")
+        const failure = await response.json().catch(() => null)
+        throw new Error(failure?.error || "Submit failed")
       }
 
-      const data = await response.json()
-      setRevisionInsights(data.summary ?? "")
-      setRevisionData(data.revisionData ?? null)
+      const payload = await response.json()
+      setRevisionInsights(payload.summary ?? "")
+      setRevisionData((payload.revision_data as RevisionBehaviorData) ?? null)
+      setIsSubmitted(true)
       setShowInsightsModal(true)
     } catch (error) {
-      console.error(error)
-      alert("Could not submit session. Please try again.")
+      console.error("Final submission failed", error)
+      alert(error instanceof Error ? error.message : "Failed to finalize session. Please try again.")
     } finally {
       setIsSubmitting(false)
     }
@@ -315,13 +418,51 @@ export default function ArgumentativeWritingAssistant() {
     setActiveSubTab(subTab)
   }
 
+  const handleFeedbackEvent = useCallback(
+    (payload: {
+      eventType: "suggestion_revealed"
+      feedbackLevel: 3
+      issueClientKey: string
+      metadata: {
+        source: "show_correction"
+        elementId: string
+        elementType: string
+        elementIndex: number | null
+      }
+    }) => {
+      const issueId = issueRegistry[payload.issueClientKey]?.issueId
+      if (!issueId) return
+
+      void logInteraction({
+        eventType: payload.eventType,
+        issueId,
+        feedbackLevel: payload.feedbackLevel,
+        metadata: payload.metadata,
+      })
+    },
+    [issueRegistry, logInteraction],
+  )
+
+  const wordCount = essay.trim().split(/\s+/).filter(Boolean).length
+  const analyzeAtMs = analyzeClickedAt ? Date.parse(analyzeClickedAt) : null
+  const submitUnlockAtMs = analyzeAtMs ? analyzeAtMs + 5 * 60 * 1000 : null
+
+  const canSubmit = useMemo(() => {
+    if (!submitUnlockAtMs || isSubmitted) return false
+    return nowMs >= submitUnlockAtMs
+  }, [submitUnlockAtMs, nowMs, isSubmitted])
+
+  const remainingMs = submitUnlockAtMs ? Math.max(0, submitUnlockAtMs - nowMs) : 5 * 60 * 1000
+  const remainingMinutes = Math.floor(remainingMs / 60000)
+  const remainingSeconds = Math.floor((remainingMs % 60000) / 1000)
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b bg-card">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <h1 className="text-xl font-bold">ReflectNote</h1>
+              <h1 className="text-xl font-bold">Revisage Analytics</h1>
             </div>
 
             <div className="flex items-center gap-3">
@@ -333,8 +474,14 @@ export default function ArgumentativeWritingAssistant() {
                 {isAnalyzing ? "Analyzing..." : "Analyze Essay"}
               </Button>
 
-              <Button onClick={handleSubmitSession} disabled={!sessionReady || isSubmitting || !essay.trim()}>
-                {isSubmitting ? "Submitting..." : "Finish Session"}
+              <Button
+                onClick={handleSubmit}
+                disabled={!canSubmit || isSubmitting || isSubmitted}
+                className="flex items-center gap-2"
+                variant="default"
+              >
+                <Send className="h-4 w-4" />
+                {isSubmitting ? "Submitting..." : "Submit / Finish Session"}
               </Button>
             </div>
           </div>
@@ -392,7 +539,7 @@ export default function ArgumentativeWritingAssistant() {
           onElementSelect={handleElementSelect}
           onTabChange={handleTabChange}
           onSubTabChange={handleSubTabChange}
-          onCorrectionViewed={handleCorrectionViewed}
+          onFeedbackEvent={handleFeedbackEvent}
         />
       </div>
 

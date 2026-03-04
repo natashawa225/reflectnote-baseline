@@ -19,21 +19,21 @@ interface ArgumentativeFeedbackProps {
   isAnalyzing: boolean
   onHighlightText?: (text: string, effectiveness: string) => void
   onElementSelect?: (elementId: string | null) => void
-  onCorrectionViewed?: (params: {
-    key: string
-    elementType: ArgumentElementKey
-    originalText: string
-    correctedText: string
+  onFeedbackEvent?: (payload: {
+    eventType: "suggestion_revealed"
+    feedbackLevel: 3
+    issueClientKey: string
+    metadata: {
+      source: "show_correction"
+      elementId: string
+      elementType: string
+      elementIndex: number | null
+    }
   }) => void
 }
 
-export function ArgumentativeFeedback({
-  analysis,
-  essay,
-  isAnalyzing,
-  onHighlightText,
-  onCorrectionViewed,
-}: ArgumentativeFeedbackProps) {
+export function ArgumentativeFeedback({ analysis, essay, isAnalyzing, onHighlightText, onFeedbackEvent }: ArgumentativeFeedbackProps) {
+
   const [showDiagram, setShowDiagram] = useState(false)
   const [selectedElement, setSelectedElement] = useState<string | null>(null)
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
@@ -65,6 +65,26 @@ export function ArgumentativeFeedback({
   }
 
   const toggleCorrection = (elementId: string) => {
+    const isOpening = !showCorrections.has(elementId)
+    if (isOpening) {
+      const match = elementId.match(/^(.*?)-(\d+)$/)
+      const rawElementType = match ? match[1] : elementId
+      const elementType = rawElementType === "claim" ? "claims" : rawElementType === "evidence" ? "evidence" : rawElementType
+      const elementIndex = match ? parseInt(match[2], 10) : null
+
+      onFeedbackEvent?.({
+        eventType: "suggestion_revealed",
+        feedbackLevel: 3,
+        issueClientKey: elementId,
+        metadata: {
+          source: "show_correction",
+          elementId,
+          elementType,
+          elementIndex,
+        },
+      })
+    }
+
     const newShowCorrections = new Set(showCorrections)
     if (newShowCorrections.has(elementId)) {
       newShowCorrections.delete(elementId)
@@ -135,28 +155,26 @@ export function ArgumentativeFeedback({
     setSelectedElement(selectedElement === uniqueId ? null : uniqueId)
     setSelectedIndex(index !== undefined ? index : null)
 
+    const elementType = baseElementId === "claim" ? "claims" : baseElementId === "evidence" ? "evidence" : baseElementId
+    onFeedbackEvent?.({
+      eventType: "suggestion_revealed",
+      feedbackLevel: 3,
+      issueClientKey: elementId,
+      metadata: {
+        source: "show_correction",
+        elementId,
+        elementType,
+        elementIndex: index ?? null,
+      },
+    })
+
     // Highlight text in essay if element has text
     const element = getElement(baseElementId, index)
     console.log("[ArgumentativeFeedback] Retrieved element:", element)
-
+    
     if (element && element.text && onHighlightText) {
       onHighlightText(element.text, element.effectiveness)
     }
-
-    if (!element?.suggestion || !element?.text || !onCorrectionViewed) {
-      return
-    }
-
-    const elementType =
-      (baseElementId === "claim" ? "claims" : baseElementId) as ArgumentElementKey
-
-    const normalizedIndex = index ?? 0
-    onCorrectionViewed({
-      key: `${elementType}-${normalizedIndex}`,
-      elementType,
-      originalText: element.text,
-      correctedText: element.suggestion,
-    })
   }
 
   const handleCardHover = (elementId: string, isHovering: boolean) => {

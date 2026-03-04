@@ -1,17 +1,16 @@
-export function getDeviceId() {
+const SESSION_KEY = "session_id"
+
+export function getOrCreateSessionId(): string | null {
   if (typeof window === "undefined") {
-    // We're on the server, just return null (or handle differently)
     return null
   }
 
-  let deviceId = localStorage.getItem("deviceId")
-  if (!deviceId) {
-    deviceId =
-      typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : Math.random().toString(36).substring(2) + Date.now().toString(36)
-
-    localStorage.setItem("deviceId", deviceId)
+  const existing = window.localStorage.getItem(SESSION_KEY)
+  if (existing) {
+    return existing
   }
-  return deviceId
+
+  const nextId = crypto.randomUUID()
+  window.localStorage.setItem(SESSION_KEY, nextId)
+  return nextId
 }

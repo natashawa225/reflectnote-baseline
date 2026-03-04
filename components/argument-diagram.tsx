@@ -146,7 +146,7 @@ export function ArgumentDiagram({ analysis, essay, onElementClick }: ArgumentDia
             <line x1="535" y1="480" x2="535" y2="430" stroke="#6b7280" strokeWidth="3" markerEnd="url(#arrowhead)" />
 
             {/* Parallel connections (bidirectional) */}
-            <line
+            {/* <line
               x1="238"
               y1="285"
               x2="295"
@@ -155,7 +155,7 @@ export function ArgumentDiagram({ analysis, essay, onElementClick }: ArgumentDia
               strokeWidth="2"
               markerEnd="url(#arrowhead)"
               markerStart="url(#arrowhead-bidirectional)"
-            />
+            /> */}
             <line
               x1="478"
               y1="285"
@@ -166,7 +166,7 @@ export function ArgumentDiagram({ analysis, essay, onElementClick }: ArgumentDia
               markerEnd="url(#arrowhead)"
               markerStart="url(#arrowhead-bidirectional)"
             />
-            <line
+            {/* <line
               x1="135"
               y1="390"
               x2="165"
@@ -175,7 +175,7 @@ export function ArgumentDiagram({ analysis, essay, onElementClick }: ArgumentDia
               strokeWidth="2"
               markerEnd="url(#arrowhead)"
               markerStart="url(#arrowhead-bidirectional)"
-            />
+            /> */}
 
             {/* All elements to conclusion */}
             <line x1="300" y1="520" x2="300" y2="202" stroke="#6b7280" strokeWidth="3" markerEnd="url(#arrowhead)" />
@@ -331,13 +331,13 @@ export function ArgumentDiagram({ analysis, essay, onElementClick }: ArgumentDia
             {/* Your essay is missing the following elements */}
             你的文章中暂未体现以下论证要素:
             </p>
-            <div className="flex flex-wrap gap-2">
+            {/* <div className="flex flex-wrap gap-2">
               {missingElements.map((element) => (
                 <Badge key={element} variant="destructive" className="text-xs">
                   {element.charAt(0).toUpperCase() + element.slice(1)}
                 </Badge>
               ))}
-            </div>
+            </div> */}
             <p className="text-red-700 text-sm mt-2">
             建议补充这些要素，以增强论证的完整性与说服力。 
             </p>

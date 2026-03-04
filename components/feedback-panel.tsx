@@ -25,11 +25,16 @@ interface FeedbackPanelProps {
   onElementSelect?: (elementId: string | null) => void
   onTabChange?: (tab: string) => void
   onSubTabChange?: (subTab: string) => void
-  onCorrectionViewed?: (params: {
-    key: string
-    elementType: ArgumentElementKey
-    originalText: string
-    correctedText: string
+  onFeedbackEvent?: (payload: {
+    eventType: "suggestion_revealed"
+    feedbackLevel: 3
+    issueClientKey: string
+    metadata: {
+      source: "show_correction"
+      elementId: string
+      elementType: string
+      elementIndex: number | null
+    }
   }) => void
 }
 
@@ -46,7 +51,7 @@ export function FeedbackPanel({
   onElementSelect,
   onTabChange,
   onSubTabChange,
-  onCorrectionViewed,
+  onFeedbackEvent,
 }: FeedbackPanelProps) {
   const [activeTab, setActiveTab] = useState("argumentative")
   const [isResizing, setIsResizing] = useState(false)
@@ -161,7 +166,7 @@ export function FeedbackPanel({
                   isAnalyzing={isAnalyzing}
                   onHighlightText={onHighlightText}
                   onElementSelect={onElementSelect}
-                  onCorrectionViewed={onCorrectionViewed}
+                  onFeedbackEvent={onFeedbackEvent}
                 />
               </CardContent>
 
