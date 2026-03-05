@@ -1,15 +1,19 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { getOpenAIClient } from "@/lib/openai"
+import { openai } from "@/lib/openai"
 import {
   buildRevisionBehaviorData,
+  getDraftSnapshotBySessionAndStage,
+  getInteractionLogBySessionAndEvent,
   getSessionDraftSnapshots,
   getSessionLogs,
   insertDraftSnapshot,
   insertInteractionLog,
+  updateDraftSnapshotById,
   updateSessionReflectiveSummary,
   updateSessionSubmittedAt,
 } from "@/lib/interaction-logs-server"
+
 
 const bodySchema = z.object({
   session_id: z.string().uuid(),
@@ -26,69 +30,115 @@ export async function POST(request: Request) {
 
     const { session_id, final_essay_text } = parsed.data
 
-    const finalLog = await insertInteractionLog({
-      session_id,
-      event_type: "final_submission",
-      feedback_level: null,
-      metadata: { source: "submit_button" },
-    })
+    const finalLog =
+      (await getInteractionLogBySessionAndEvent(session_id, "final_submission")) ??
+      (await insertInteractionLog({
+        session_id,
+        event_type: "final_submission",
+        metadata: { source: "submit_button" },
+      }))
 
-    await insertDraftSnapshot({
-      session_id,
-      issue_id: null,
-      stage: "final",
-      draft_text: final_essay_text,
-    })
+    const existingFinalSnapshot = await getDraftSnapshotBySessionAndStage(session_id, "final")
+    if (!existingFinalSnapshot) {
+      await insertDraftSnapshot({
+        session_id,
+        issue_id: null,
+        stage: "final",
+        draft_text: final_essay_text,
+      })
+    } else {
+      await updateDraftSnapshotById(existingFinalSnapshot.id, {
+        draft_text: final_essay_text,
+        issue_id: null,
+        stage: "final",
+      })
+    }
 
     const sessionRow = await updateSessionSubmittedAt(session_id)
 
     const allLogs = await getSessionLogs(session_id)
     const allSnapshots = await getSessionDraftSnapshots(session_id)
     const revisionData = buildRevisionBehaviorData(allLogs, allSnapshots)
+    const initialSnapshot = allSnapshots.find((snapshot) => snapshot.stage === "initial")
+    const latestFinalSnapshot = [...allSnapshots].reverse().find((snapshot) => snapshot.stage === "final")
+    const latestSnapshot = allSnapshots[allSnapshots.length - 1]
+    const initialDraft = initialSnapshot?.draft_text ?? allSnapshots[0]?.draft_text ?? ""
+    const revisedDraft = latestFinalSnapshot?.draft_text ?? latestSnapshot?.draft_text ?? final_essay_text
 
-    const suggestionRevealedCount = allLogs.filter((log) => log.event_type === "suggestion_revealed").length
-    const editDetectedCount = allLogs.filter((log) => log.event_type === "edit_detected").length
+    const fallbackSummary = `Revision Insights
 
-    const issueElementViews = new Map<string, number>()
-    allLogs
-      .filter((log) => log.event_type === "suggestion_revealed")
-      .forEach((log) => {
-        const elementType = typeof log.metadata?.elementType === "string" ? log.metadata.elementType : null
-        if (!elementType) return
-        issueElementViews.set(elementType, (issueElementViews.get(elementType) ?? 0) + 1)
-      })
+Revision Activity Overview
+- Total revisions after analysis: ${revisionData.totalEditsAfterAnalyze}
+- Revision window: ${revisionData.revisionWindowMinutes} minutes
+- Draft length change: ${revisionData.firstDraftWordCount} -> ${revisionData.finalDraftWordCount} words (${revisionData.firstToFinalWordDelta >= 0 ? "+" : ""}${revisionData.firstToFinalWordDelta})
 
-    const mostViewedElementType = [...issueElementViews.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "none"
+Feedback Escalation Pattern
+- Level 1 views: ${revisionData.feedbackLevelCounts.level1}
+- Level 2 views: ${revisionData.feedbackLevelCounts.level2}
+- Level 3 views: ${revisionData.feedbackLevelCounts.level3}
 
-    const prompt = [
-      "You are analyzing a student's revision behavior in a baseline argumentative writing tool. Based on the interaction data below, summarize how they revised their essay, what they focused on, and what behavioral patterns are visible.",
-      "",
-      "Interaction data:",
-      JSON.stringify(
-        {
-          suggestion_revealed_count: suggestionRevealedCount,
-          edit_detected_count: editDetectedCount,
-          most_viewed_element_type: mostViewedElementType,
-          revision_behavior_data: revisionData,
-        },
-        null,
-        2,
-      ),
-    ].join("\n")
+Structural Changes Observed
+- Most revised sections: ${revisionData.mostRevisedSections.join(", ") || "none detected"}
 
-    let summary = "Your Revision Insights\n\nYou completed your revision session."
+Suggested Focus for Future Revision
+- Continue escalating to deeper feedback levels when revising key argument sections.
+- Make one final cohesion pass after substantive edits to stabilize structure.
+- Track revision goals per paragraph before editing to improve efficiency.`
+
+    let summary = fallbackSummary
     try {
-      const completion = await getOpenAIClient().responses.create({
-        model: "gpt-4o",
-        input: prompt,
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
         temperature: 0.4,
+        messages: [
+          {
+            role: "system",
+            content:
+            "You are an expert writing tutor. Focus on providing **clear, student-friendly revision insights**. Do NOT discuss internal revision logs or technical feedback data. Only analyze the essay itself. Provide actionable advice students can use to improve their writing."
+          },
+          {
+            role: "user",       content: `
+
+Generate a \"Revision Insights\" report for a student. Use ONLY the initial and revised drafts provided below.
+
+Structure the report with these sections:
+
+1) Overall Writing Improvement
+- Highlight how the essay improved after revision (clarity, flow, structure).
+
+2) Argument Element Performance
+- Note which claims, evidence, or counterarguments improved or still need work.
+
+3) Revision Changes
+- Summarize the main additions or improvements made in this revision.
+
+4) Next Revision Suggestions
+- Give 2–4 concrete steps for the student’s next revision.
+- Use clear, actionable advice (e.g., "add a rebuttal to the counterargument" instead of "improve argument").
+
+5) Learning Insight
+- One short reflection on what this revision shows about the student’s developing writing skills.
+
+Initial Draft:
+${initialDraft}
+
+Revised Draft:
+${revisedDraft}
+`
+            ,
+          },
+        ],
       })
-      summary = completion.output_text?.trim() || summary
+      summary = completion.choices[0]?.message?.content?.trim() || fallbackSummary
     } catch (openAiError) {
-      console.error("OpenAI summary generation failed; keeping fallback summary", openAiError)
+      console.error("OpenAI summary generation failed, returning fallback summary", openAiError)
     }
 
-    await updateSessionReflectiveSummary(session_id, summary)
+    try {
+      await updateSessionReflectiveSummary(session_id, summary)
+    } catch (persistError) {
+      console.error("Failed to persist reflective_summary", persistError)
+    }
 
     return NextResponse.json({
       success: true,
@@ -99,9 +149,9 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error("finalize-session POST failed", error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to finalize session" },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: "Failed to finalize session" }, { status: 500 })
   }
 }
+
+// Revision behavior data:
+// ${JSON.stringify(revisionData, null, 2)}

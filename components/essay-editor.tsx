@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect, useCallback,useMemo } from "react"
 import { Card } from "@/components/ui/card"
 import type { Highlight } from "@/lib/types"
 
@@ -14,6 +14,7 @@ interface EssayEditorProps {
   activeTab?: string
   activeSubTab?: string
   currentHighlight?: { text: string; effectiveness: string } | null
+  isLocked?: boolean
 }
 
 export function EssayEditor({
@@ -25,6 +26,7 @@ export function EssayEditor({
   activeTab = "argumentative",
   activeSubTab,
   currentHighlight,
+  isLocked = false,
 }: EssayEditorProps) {
   const textAreaRef = useRef<HTMLTextAreaElement>(null)
   const highlightRef = useRef<HTMLDivElement>(null)
@@ -201,8 +203,26 @@ export function EssayEditor({
     return dynamicHighlights.sort((a, b) => a.start - b.start)
   }, [highlights, activeTab, activeSubTab, text, selectedElementId, editingRanges, persistentHighlight])
 
+  const visibleHighlights = useMemo(() => getDynamicHighlights(), [getDynamicHighlights])
+
+  useEffect(() => {
+    if (!currentHighlight || !highlightRef.current || !textAreaRef.current) return
+    if (visibleHighlights.length === 0) return
+
+    const container = highlightRef.current
+    const editor = textAreaRef.current
+
+    requestAnimationFrame(() => {
+      const target = container.querySelector<HTMLElement>('[data-persistent-highlight="true"]')
+      if (!target) return
+
+      const nextTop = Math.max(0, target.offsetTop - container.clientHeight * 0.35)
+      container.scrollTop = nextTop
+      editor.scrollTop = nextTop
+    })
+  }, [currentHighlight, visibleHighlights])
+
   const renderHighlightedText = () => {
-    const visibleHighlights = getDynamicHighlights()
     if (visibleHighlights.length === 0) return null
 
     const segments: Array<{
@@ -266,18 +286,20 @@ export function EssayEditor({
       }
     
       const highlight = segment.highlights[0]
+      const isPersistent = highlight.id.startsWith("persistent-")
       return (
         <span
-  key={`highlight-${index}-${segment.start}`}
-  className={`${highlight.color} rounded`}
-  style={{
-    color: "transparent",   // hide text
-    userSelect: "none",     // don’t let overlay steal selection
-    pointerEvents: "none",  // don’t block textarea
-  }}
->
-  {segment.text}
-</span>
+          key={`highlight-${index}-${segment.start}`}
+          className={`${highlight.color} rounded`}
+          data-persistent-highlight={isPersistent ? "true" : "false"}
+          style={{
+            color: "transparent",
+            userSelect: "none",
+            pointerEvents: "none",
+          }}
+        >
+          {segment.text}
+        </span>
 
       )
     })    
@@ -309,17 +331,19 @@ export function EssayEditor({
         <div className="mb-4">
           <h2 className="text-xl font-semibold">Essay Editor</h2>
           <p className="text-sm text-muted-foreground">
-          Write a 200-300 word essay within 30-40 minuteson the given topic, and then revise it carefully
+          Write a 200-300 word essay within 30-40 minutes on the given topic, and then revise it carefully
           </p>
         </div>
 
         <div className="relative flex-1">
           <div
             ref={highlightRef}
-            className="absolute inset-0 w-full h-full p-4 border rounded-lg overflow-hidden whitespace-pre-wrap font-sans leading-relaxed"
+            className="absolute inset-0 w-full h-full p-4 border rounded-lg overflow-auto whitespace-pre-wrap break-words font-sans leading-relaxed"
             style={{
-              pointerEvents: getDynamicHighlights().length > 0 ? "auto" : "none",
+              pointerEvents: "none",
               color: "black",
+              scrollbarWidth: "none",
+              msOverflowStyle: "none",
             }}
           >
             {renderHighlightedText()}
@@ -330,13 +354,17 @@ export function EssayEditor({
             value={text}
             onChange={handleChange}
             onScroll={handleScroll}
-            className="absolute inset-0 w-full h-full p-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 font-sans leading-relaxed"
+            readOnly={isLocked}
+            disabled={isLocked}
+            className="absolute inset-0 w-full h-full p-4 border rounded-lg resize-none overflow-auto focus:outline-none focus:ring-2 focus:ring-primary/20 font-sans leading-relaxed"
             style={{
-              color: getDynamicHighlights().length > 0 ? "black" : "black",
+              color: "black",
               caretColor: "black",
               background: "transparent",
+              whiteSpace: "pre-wrap",
+              overflowWrap: "break-word",
             }}
-            placeholder="Start writing your argumentative essay..."
+            placeholder={isLocked ? "Session submitted. Editing is disabled." : "Start writing your argumentative essay..."}
           />
         </div>
 

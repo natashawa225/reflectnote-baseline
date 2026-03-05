@@ -14,6 +14,8 @@ import { getOrCreateSessionId } from "@/lib/deviceId"
 import { analyzeArgumentativeStructure } from "@/lib/analysis"
 import type { AnalysisResult, Highlight, ArgumentElementKey } from "@/lib/types"
 import { Sparkles, BookOpen, AlertCircle, Send } from "lucide-react"
+import ReactMarkdown from "react-markdown"
+import rehypeRaw from "rehype-raw"
 
 type InteractionEventType =
   | "initial_draft"
@@ -548,19 +550,30 @@ export default function ArgumentativeWritingAssistant() {
           <DialogHeader>
             <DialogTitle>Revision Insights</DialogTitle>
           </DialogHeader>
+
           {revisionData && (
-            <div className="text-sm text-muted-foreground space-y-1 mb-4">
+            <div className="text-sm text-muted-foreground space-y-1 mb-1">
               <p>Revisions made: {revisionData.totalEditsAfterAnalyze}</p>
-              <p>
+              {/* <p>
                 Feedback levels: L1 {revisionData.feedbackLevelCounts.level1}, L2 {revisionData.feedbackLevelCounts.level2},
                 L3 {revisionData.feedbackLevelCounts.level3}
-              </p>
+              </p> */}
               <p>Revision window: {revisionData.revisionWindowMinutes} minutes</p>
             </div>
           )}
 
-          <div className="whitespace-pre-wrap text-sm leading-relaxed">
-            {revisionInsights}
+          <div className="text-sm leading-relaxed space-y-2">
+            <ReactMarkdown
+              rehypePlugins={[rehypeRaw]}
+              components={{
+                h3: ({ node, ...props }) => <h3 className="text-lg font-semibold my-2" {...props} />,
+                strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
+                li: ({ node, ...props }) => <li className="ml-5 list-disc" {...props} />,
+                p: ({ node, ...props }) => <p className="mb-1" {...props} />,
+              }}
+            >
+              {revisionInsights}
+            </ReactMarkdown>
           </div>
         </DialogContent>
       </Dialog>

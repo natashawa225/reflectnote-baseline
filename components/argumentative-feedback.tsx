@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -33,12 +33,151 @@ interface ArgumentativeFeedbackProps {
 }
 
 export function ArgumentativeFeedback({ analysis, essay, isAnalyzing, onHighlightText, onFeedbackEvent }: ArgumentativeFeedbackProps) {
-
   const [showDiagram, setShowDiagram] = useState(false)
   const [selectedElement, setSelectedElement] = useState<string | null>(null)
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const [expandedCard, setExpandedCard] = useState<string | null>(null)
   const [showCorrections, setShowCorrections] = useState<Set<string>>(new Set())
+
+  const toggleCorrection = (elementId: string) => {
+    const isOpening = !showCorrections.has(elementId)
+    if (isOpening) {
+      const parsed = parseElementId(elementId)
+      const elementType = parsed.elementKey
+      const elementIndex = parsed.index ?? null
+
+
+      onFeedbackEvent?.({
+        eventType: "suggestion_revealed",
+        feedbackLevel: 3,
+        issueClientKey: elementId,
+        metadata: {
+          source: "show_correction",
+          elementId,
+          elementType,
+          elementIndex,
+        },
+      })
+    }
+    setShowCorrections((prev) => {
+      const next = new Set(prev)
+      if (next.has(elementId)) {
+        next.delete(elementId)
+      } else {
+        next.add(elementId)
+      }
+      return next
+    })
+  }
+
+  const getEffectivenessColor = (effectiveness: string) => {
+    switch (effectiveness) {
+      case "Effective":
+        return "bg-green-100 text-green-800 border-green-200"
+      case "Adequate":
+        return "bg-yellow-100 text-yellow-800 border-yellow-200"
+      case "Ineffective":
+        return "bg-red-100 text-red-800 border-red-200"
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200"
+    }
+  }
+
+  const getDisplayEffectiveness = (element: ArgumentElement): ArgumentElement["effectiveness"] => {
+    if ((element.text ?? "").trim().length === 0) {
+      return "Missing"
+    }
+    return element.effectiveness
+  }
+
+  type ParsedElement = {
+    elementKey: keyof AnalysisResult["elements"]
+    index?: number
+    correctionKey: string
+  }
+
+  // Parse only indexed claim/evidence IDs; keep single-node IDs exact.
+  const parseElementId = (elementId: string): ParsedElement => {
+    const indexedMatch = elementId.match(/^(claim|evidence)-(\d+)$/)
+    if (indexedMatch) {
+      const base = indexedMatch[1]
+      const parsedNumber = parseInt(indexedMatch[2], 10)
+      return {
+        elementKey: base === "claim" ? "claims" : "evidence",
+        index: Math.max(0, parsedNumber - 1),
+        correctionKey: `${base}-${parsedNumber}`,
+      }
+    }
+
+    return {
+      elementKey: elementId as keyof AnalysisResult["elements"],
+      correctionKey: elementId,
+    }
+  }
+
+  const getElement = (parsed: ParsedElement): ArgumentElement | null => {
+    if (!analysis) return null
+    const element = analysis.elements[parsed.elementKey]
+    if (Array.isArray(element)) {
+      if (parsed.index === undefined) return null
+      const byElementId = element.find((entry) => entry.id === parsed.correctionKey)
+      if (byElementId) return byElementId
+
+      const byExactIndex = element[parsed.index]
+      if (byExactIndex) return byExactIndex
+
+      // Accept 1-based IDs from model/parser regressions (e.g., claim-1 for first claim).
+      if (parsed.index > 0) {
+        const byOneBasedIndex = element[parsed.index - 1]
+        if (byOneBasedIndex) return byOneBasedIndex
+      }
+
+      return null
+    }
+    return (element as ArgumentElement) ?? null
+  }
+
+  const handleElementClick = (elementId: string) => {
+    const parsed = parseElementId(elementId)
+    const uniqueId = parsed.correctionKey
+    setSelectedElement((prev) => (prev === uniqueId ? null : uniqueId))
+
+    onFeedbackEvent?.({
+      eventType: "suggestion_revealed",
+      feedbackLevel: 3,
+      issueClientKey: uniqueId,
+      metadata: {
+        source: "show_correction",
+        elementId: uniqueId,
+        elementType: parsed.elementKey,
+        elementIndex: parsed.index ?? null,
+      },
+    })
+
+    // Highlight text in essay if element has text
+    const element = getElement(parsed)
+    if (element && element.text.trim().length > 0 && onHighlightText) {
+      onHighlightText(element.text, getDisplayEffectiveness(element))
+    }
+  }
+
+  const handleCardHover = (elementId: string, isHovering: boolean) => {
+    if (isHovering) {
+      setExpandedCard(elementId)
+    } else {
+      setExpandedCard(null)
+    }
+  }
+
+  const selectedParsed = useMemo(
+    () => (selectedElement ? parseElementId(selectedElement) : null),
+    [selectedElement],
+  )
+  const currentElement = useMemo(
+    () => (selectedParsed ? getElement(selectedParsed) : null),
+    [selectedParsed, analysis],
+  )
+  const currentElementEffectiveness = currentElement ? getDisplayEffectiveness(currentElement) : null
+  const isOptionalCounterclaimEvidence = selectedParsed?.elementKey === "counterclaim_evidence"
 
   if (isAnalyzing) {
     return (
@@ -64,146 +203,6 @@ export function ArgumentativeFeedback({ analysis, essay, isAnalyzing, onHighligh
     )
   }
 
-  const toggleCorrection = (elementId: string) => {
-    const isOpening = !showCorrections.has(elementId)
-    if (isOpening) {
-      const match = elementId.match(/^(.*?)-(\d+)$/)
-      const rawElementType = match ? match[1] : elementId
-      const elementType = rawElementType === "claim" ? "claims" : rawElementType === "evidence" ? "evidence" : rawElementType
-      const elementIndex = match ? parseInt(match[2], 10) : null
-
-      onFeedbackEvent?.({
-        eventType: "suggestion_revealed",
-        feedbackLevel: 3,
-        issueClientKey: elementId,
-        metadata: {
-          source: "show_correction",
-          elementId,
-          elementType,
-          elementIndex,
-        },
-      })
-    }
-
-    const newShowCorrections = new Set(showCorrections)
-    if (newShowCorrections.has(elementId)) {
-      newShowCorrections.delete(elementId)
-    } else {
-      newShowCorrections.add(elementId)
-    }
-    setShowCorrections(newShowCorrections)
-  }
-
-  const getEffectivenessColor = (effectiveness: string) => {
-    switch (effectiveness) {
-      case "Effective":
-        return "bg-green-100 text-green-800 border-green-200"
-      case "Adequate":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200"
-      case "Ineffective":
-        return "bg-red-100 text-red-800 border-red-200"
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200"
-    }
-  }
-
-  // Helper function to get element by key and index
-  const getElement = (elementKey: string, index?: number): ArgumentElement | null => {
-    console.log("[ArgumentativeFeedback] getElement called:", { elementKey, index })
-    
-    // Convert singular diagram IDs to plural analysis keys
-    let analysisKey = elementKey
-    if (elementKey === 'claim') analysisKey = 'claims'
-    if (elementKey === 'evidence') analysisKey = 'evidence'
-    
-    const element = analysis.elements[analysisKey as keyof typeof analysis.elements]
-    console.log("[ArgumentativeFeedback] Raw element from analysis:", element)
-    
-    if (Array.isArray(element)) {
-      const result = index !== undefined ? element[index] || null : null
-      console.log("[ArgumentativeFeedback] Array element result:", result)
-      return result
-    }
-    
-    console.log("[ArgumentativeFeedback] Single element result:", element)
-    return element as ArgumentElement
-  }
-
-  const handleElementClick = (elementId: string) => {
-    console.log("[ArgumentativeFeedback] Element clicked:", elementId)
-    console.log("[ArgumentativeFeedback] Analysis elements:", analysis.elements)
-    
-    // Parse element ID to extract base name and index
-    const match = elementId.match(/^(.*?)-(\d+)$/)
-    let baseElementId: string
-    let index: number | undefined
-    
-    if (match) {
-      baseElementId = match[1]
-      index = parseInt(match[2], 10)
-      console.log("[ArgumentativeFeedback] Parsed array element:", { baseElementId, index })
-    } else {
-      baseElementId = elementId
-      index = undefined
-      console.log("[ArgumentativeFeedback] Single element:", baseElementId)
-    }
-    
-    // Create unique identifier
-    const uniqueId = elementId
-    console.log("[ArgumentativeFeedback] Unique ID:", uniqueId)
-    
-    setSelectedElement(selectedElement === uniqueId ? null : uniqueId)
-    setSelectedIndex(index !== undefined ? index : null)
-
-    const elementType = baseElementId === "claim" ? "claims" : baseElementId === "evidence" ? "evidence" : baseElementId
-    onFeedbackEvent?.({
-      eventType: "suggestion_revealed",
-      feedbackLevel: 3,
-      issueClientKey: elementId,
-      metadata: {
-        source: "show_correction",
-        elementId,
-        elementType,
-        elementIndex: index ?? null,
-      },
-    })
-
-    // Highlight text in essay if element has text
-    const element = getElement(baseElementId, index)
-    console.log("[ArgumentativeFeedback] Retrieved element:", element)
-    
-    if (element && element.text && onHighlightText) {
-      onHighlightText(element.text, element.effectiveness)
-    }
-  }
-
-  const handleCardHover = (elementId: string, isHovering: boolean) => {
-    if (isHovering) {
-      setExpandedCard(elementId)
-    } else {
-      setExpandedCard(null)
-    }
-  }
-
-  // Helper function to parse selected element ID
-  const parseSelectedElement = () => {
-    if (!selectedElement) return { elementKey: null, index: undefined }
-    
-    const match = selectedElement.match(/^(.*?)-(\d+)$/)
-    if (match) {
-      const baseKey = match[1]
-      const index = parseInt(match[2], 10)
-      const elementKey = baseKey === 'claim' ? 'claims' : baseKey === 'evidence' ? 'evidence' : baseKey
-      return { elementKey, index }
-    } else {
-      return { elementKey: selectedElement, index: undefined }
-    }
-  }
-
-
-  const { elementKey, index } = parseSelectedElement()
-  const currentElement = elementKey ? getElement(elementKey, index) : null
-
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-6 space-y-6">
@@ -220,19 +219,20 @@ export function ArgumentativeFeedback({ analysis, essay, isAnalyzing, onHighligh
                     <div className="flex items-center gap-2">
                     <Lightbulb className="h-4 w-4" />
                     <span>
-                      {elementKey && elementKey.charAt(0).toUpperCase() + elementKey.slice(1)}
-                      {index !== undefined && ` ${index + 1}`} Feedback
+                      {selectedParsed &&
+                        selectedParsed.elementKey.charAt(0).toUpperCase() + selectedParsed.elementKey.slice(1)}
+                      {selectedParsed?.index !== undefined && ` ${selectedParsed.index + 1}`} Feedback
                     </span>
                   </div>
-                  <Badge className={getEffectivenessColor(currentElement.effectiveness)}>
-                    {currentElement.effectiveness}
+                  <Badge className={getEffectivenessColor(currentElementEffectiveness ?? "Missing")}>
+                    {currentElementEffectiveness ?? "Missing"}
                   </Badge>
                 </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div>
                     {/* ✅ If Effective → show Why This Works immediately */}
-                    {currentElement.effectiveness === "Effective" ? (
+                    {currentElementEffectiveness === "Effective" ? (
                       <div className="mt-3 p-3 rounded-lg bg-green-50 border border-green-200">
                         <h5 className="font-medium mb-2 text-green-800">Why This Works:</h5>
 
@@ -265,6 +265,11 @@ export function ArgumentativeFeedback({ analysis, essay, isAnalyzing, onHighligh
                       </div>
                     ) : (
                       <div className="space-y-3">
+                        {isOptionalCounterclaimEvidence && (
+                          <p className="font-medium text-red-800 mb-2 flex items-center gap-2">
+                            <AlertTriangle className="h-4 w-4" />该要素为可选，可根据需要补充。
+                          </p>
+                        )}
 
                         <div className="flex items-start gap-3">
                               <div className="flex-1">

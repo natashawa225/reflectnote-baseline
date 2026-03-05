@@ -1,4 +1,6 @@
 export interface ArgumentElement {
+  id?: string
+  parentClaimId?: string
   text: string
   effectiveness: "Effective" | "Adequate" | "Ineffective" | "Missing"
   feedback: string
@@ -19,7 +21,6 @@ export interface AnalysisResult {
     conclusion: ArgumentElement
   }
 }
-
 export type ArgumentElementKey = keyof AnalysisResult["elements"]
 export interface LexicalDiversity {
   uniqueWords: number
