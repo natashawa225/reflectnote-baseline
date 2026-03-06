@@ -93,18 +93,20 @@ export function ArgumentativeFeedback({ analysis, essay, isAnalyzing, onHighligh
     elementKey: keyof AnalysisResult["elements"]
     index?: number
     correctionKey: string
+    sequenceNumber?: number
   }
 
   // Parse only indexed claim/evidence IDs; keep single-node IDs exact.
   const parseElementId = (elementId: string): ParsedElement => {
-    const indexedMatch = elementId.match(/^(claim|evidence)-(\d+)$/)
+    const indexedMatch = elementId.match(/^(claim|evidence)-(\d+)(?:-.+)?$/)
     if (indexedMatch) {
       const base = indexedMatch[1]
       const parsedNumber = parseInt(indexedMatch[2], 10)
       return {
         elementKey: base === "claim" ? "claims" : "evidence",
         index: Math.max(0, parsedNumber - 1),
-        correctionKey: `${base}-${parsedNumber}`,
+        correctionKey: elementId,
+        sequenceNumber: parsedNumber,
       }
     }
 
@@ -121,6 +123,18 @@ export function ArgumentativeFeedback({ analysis, essay, isAnalyzing, onHighligh
       if (parsed.index === undefined) return null
       const byElementId = element.find((entry) => entry.id === parsed.correctionKey)
       if (byElementId) return byElementId
+
+      if (parsed.sequenceNumber !== undefined) {
+        const expectedPrefix = parsed.elementKey === "claims" ? "claim" : "evidence"
+        const byNumericId = element.find((entry) => {
+          const id = entry.id ?? ""
+          const match = id.match(new RegExp(`^${expectedPrefix}-(\\d+)`))
+          if (!match) return false
+          const n = Number.parseInt(match[1], 10)
+          return Number.isFinite(n) && n === parsed.sequenceNumber
+        })
+        if (byNumericId) return byNumericId
+      }
 
       const byExactIndex = element[parsed.index]
       if (byExactIndex) return byExactIndex
