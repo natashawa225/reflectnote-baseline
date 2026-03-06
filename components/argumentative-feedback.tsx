@@ -35,39 +35,9 @@ interface ArgumentativeFeedbackProps {
 export function ArgumentativeFeedback({ analysis, essay, isAnalyzing, onHighlightText, onFeedbackEvent }: ArgumentativeFeedbackProps) {
   const [showDiagram, setShowDiagram] = useState(false)
   const [selectedElement, setSelectedElement] = useState<string | null>(null)
+  const [selectedFeedback, setSelectedFeedback] = useState<FeedbackEntry | null>(null)
   const [expandedCard, setExpandedCard] = useState<string | null>(null)
   const [showCorrections, setShowCorrections] = useState<Set<string>>(new Set())
-
-  const toggleCorrection = (elementId: string) => {
-    const isOpening = !showCorrections.has(elementId)
-    if (isOpening) {
-      const parsed = parseElementId(elementId)
-      const elementType = parsed.elementKey
-      const elementIndex = parsed.index ?? null
-
-
-      onFeedbackEvent?.({
-        eventType: "suggestion_revealed",
-        feedbackLevel: 3,
-        issueClientKey: elementId,
-        metadata: {
-          source: "show_correction",
-          elementId,
-          elementType,
-          elementIndex,
-        },
-      })
-    }
-    setShowCorrections((prev) => {
-      const next = new Set(prev)
-      if (next.has(elementId)) {
-        next.delete(elementId)
-      } else {
-        next.add(elementId)
-      }
-      return next
-    })
-  }
 
   const getEffectivenessColor = (effectiveness: string) => {
     switch (effectiveness) {
@@ -89,86 +59,91 @@ export function ArgumentativeFeedback({ analysis, essay, isAnalyzing, onHighligh
     return element.effectiveness
   }
 
-  type ParsedElement = {
+  type FeedbackEntry = {
+    elementId: string
+    element: ArgumentElement
     elementKey: keyof AnalysisResult["elements"]
-    index?: number
-    correctionKey: string
-    sequenceNumber?: number
+    index: number | null
+    status: ArgumentElement["effectiveness"]
   }
 
-  // Parse only indexed claim/evidence IDs; keep single-node IDs exact.
-  const parseElementId = (elementId: string): ParsedElement => {
-    const indexedMatch = elementId.match(/^(claim|evidence)-(\d+)(?:-.+)?$/)
-    if (indexedMatch) {
-      const base = indexedMatch[1]
-      const parsedNumber = parseInt(indexedMatch[2], 10)
-      return {
-        elementKey: base === "claim" ? "claims" : "evidence",
-        index: Math.max(0, parsedNumber - 1),
-        correctionKey: elementId,
-        sequenceNumber: parsedNumber,
+  const feedbackMap = useMemo(() => {
+    const map: Record<string, FeedbackEntry> = {}
+    if (!analysis) return map
+
+    const register = (
+      id: string,
+      element: ArgumentElement,
+      elementKey: keyof AnalysisResult["elements"],
+      index: number | null
+    ) => {
+      const normalizedId = id.trim()
+      if (!normalizedId) return
+      map[normalizedId] = {
+        elementId: normalizedId,
+        element,
+        elementKey,
+        index,
+        status: getDisplayEffectiveness(element),
       }
     }
 
-    return {
-      elementKey: elementId as keyof AnalysisResult["elements"],
-      correctionKey: elementId,
+    const registerArray = (
+      elementKey: "claims" | "evidence",
+      prefix: "claim" | "evidence",
+      elements: ArgumentElement[],
+    ) => {
+      elements.forEach((element, i) => {
+        const explicitId = (element.id ?? "").trim()
+        const elementId = explicitId || `${prefix}-${i + 1}`
+        register(elementId, element, elementKey, i)
+      })
     }
-  }
 
-  const getElement = (parsed: ParsedElement): ArgumentElement | null => {
-    if (!analysis) return null
-    const element = analysis.elements[parsed.elementKey]
-    if (Array.isArray(element)) {
-      if (parsed.index === undefined) return null
-      const byElementId = element.find((entry) => entry.id === parsed.correctionKey)
-      if (byElementId) return byElementId
+    registerArray("claims", "claim", analysis.elements.claims ?? [])
+    registerArray("evidence", "evidence", analysis.elements.evidence ?? [])
 
-      if (parsed.sequenceNumber !== undefined) {
-        const expectedPrefix = parsed.elementKey === "claims" ? "claim" : "evidence"
-        const byNumericId = element.find((entry) => {
-          const id = entry.id ?? ""
-          const match = id.match(new RegExp(`^${expectedPrefix}-(\\d+)`))
-          if (!match) return false
-          const n = Number.parseInt(match[1], 10)
-          return Number.isFinite(n) && n === parsed.sequenceNumber
-        })
-        if (byNumericId) return byNumericId
-      }
+    register("lead", analysis.elements.lead, "lead", null)
+    register("position", analysis.elements.position, "position", null)
+    register("counterclaim", analysis.elements.counterclaim, "counterclaim", null)
+    register("counterclaim_evidence", analysis.elements.counterclaim_evidence, "counterclaim_evidence", null)
+    register("rebuttal", analysis.elements.rebuttal, "rebuttal", null)
+    register("rebuttal_evidence", analysis.elements.rebuttal_evidence, "rebuttal_evidence", null)
+    register("conclusion", analysis.elements.conclusion, "conclusion", null)
 
-      const byExactIndex = element[parsed.index]
-      if (byExactIndex) return byExactIndex
-
-      // Accept 1-based IDs from model/parser regressions (e.g., claim-1 for first claim).
-      if (parsed.index > 0) {
-        const byOneBasedIndex = element[parsed.index - 1]
-        if (byOneBasedIndex) return byOneBasedIndex
-      }
-
-      return null
-    }
-    return (element as ArgumentElement) ?? null
-  }
+    return map
+  }, [analysis])
 
   const handleElementClick = (elementId: string) => {
-    const parsed = parseElementId(elementId)
-    const uniqueId = parsed.correctionKey
-    setSelectedElement((prev) => (prev === uniqueId ? null : uniqueId))
+    const uniqueId = elementId
+    const feedback = feedbackMap[uniqueId] ?? null
+    const nextSelected = selectedElement === uniqueId ? null : uniqueId
+    setSelectedElement(nextSelected)
+    setSelectedFeedback(nextSelected ? feedback : null)
 
-    onFeedbackEvent?.({
-      eventType: "suggestion_revealed",
-      feedbackLevel: 3,
-      issueClientKey: uniqueId,
-      metadata: {
-        source: "show_correction",
-        elementId: uniqueId,
-        elementType: parsed.elementKey,
-        elementIndex: parsed.index ?? null,
-      },
-    })
+    if (feedback) {
+      onFeedbackEvent?.({
+        eventType: "suggestion_revealed",
+        feedbackLevel: 3,
+        issueClientKey: uniqueId,
+        metadata: {
+          source: "show_correction",
+          elementId: uniqueId,
+          elementType: feedback.elementKey,
+          elementIndex: feedback.index,
+        },
+      })
+    }
+
+    console.log("Clicked element:", uniqueId)
+    console.log("Feedback retrieved:", feedbackMap[uniqueId])
 
     // Highlight text in essay if element has text
-    const element = getElement(parsed)
+    if (!feedback) {
+      console.warn("Feedback entry missing for diagram element id", { elementId: uniqueId })
+      return
+    }
+    const element = feedback.element
     if (element && element.text.trim().length > 0 && onHighlightText) {
       onHighlightText(element.text, getDisplayEffectiveness(element))
     }
@@ -182,16 +157,10 @@ export function ArgumentativeFeedback({ analysis, essay, isAnalyzing, onHighligh
     }
   }
 
-  const selectedParsed = useMemo(
-    () => (selectedElement ? parseElementId(selectedElement) : null),
-    [selectedElement],
-  )
-  const currentElement = useMemo(
-    () => (selectedParsed ? getElement(selectedParsed) : null),
-    [selectedParsed, analysis],
-  )
+  const currentEntry = selectedFeedback
+  const currentElement = selectedFeedback?.element ?? null
   const currentElementEffectiveness = currentElement ? getDisplayEffectiveness(currentElement) : null
-  const isOptionalCounterclaimEvidence = selectedParsed?.elementKey === "counterclaim_evidence"
+  const isOptionalCounterclaimEvidence = currentEntry?.elementKey === "counterclaim_evidence"
   const suggestedCorrection =
     ((currentElement as (ArgumentElement & { suggested_correction?: string }) | null)?.suggested_correction ??
       currentElement?.suggestion ??
@@ -237,9 +206,8 @@ export function ArgumentativeFeedback({ analysis, essay, isAnalyzing, onHighligh
                     <div className="flex items-center gap-2">
                     <Lightbulb className="h-4 w-4" />
                     <span>
-                      {selectedParsed &&
-                        selectedParsed.elementKey.charAt(0).toUpperCase() + selectedParsed.elementKey.slice(1)}
-                      {selectedParsed?.index !== undefined && ` ${selectedParsed.index + 1}`} Feedback
+                      {currentEntry && currentEntry.elementKey.charAt(0).toUpperCase() + currentEntry.elementKey.slice(1)}
+                      {currentEntry?.index !== null && currentEntry?.index !== undefined && ` ${currentEntry.index + 1}`} Feedback
                     </span>
                   </div>
                   <Badge className={getEffectivenessColor(currentElementEffectiveness ?? "Missing")}>

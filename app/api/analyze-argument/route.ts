@@ -423,20 +423,67 @@ async function conditionalSplitEvidence(parsed: ParsedXML): Promise<ParsedXML> {
 // ELEMENT COLLECTION / RECONSTRUCTION
 // ============================================================================
 
-type ElementEntry = { element: any; path: string; name: string; index?: number }
+type ElementEntry = { element: any; path: string; name: string; elementId: string; index?: number }
 
 function collectElements(enriched: ReturnType<typeof enrichElements>): ElementEntry[] {
   const out: ElementEntry[] = []
 
   for (const name of ["lead","position","counterclaim","counterclaim_evidence","rebuttal","rebuttal_evidence","conclusion"] as const) {
-    out.push({ element: enriched.elements[name], path: `elements.${name}`, name })
+    out.push({ element: enriched.elements[name], path: `elements.${name}`, name, elementId: name })
   }
   enriched.elements.claims.forEach((el, i) =>
-    out.push({ element: el, path: `elements.claims[${i}]`, name: "claim", index: i }))
+    out.push({ element: el, path: `elements.claims[${i}]`, name: "claim", elementId: el.id?.trim() || `claim-${i + 1}`, index: i }))
   enriched.elements.evidence.forEach((el, i) =>
-    out.push({ element: el, path: `elements.evidence[${i}]`, name: "evidence", index: i }))
+    out.push({ element: el, path: `elements.evidence[${i}]`, name: "evidence", elementId: el.id?.trim() || `evidence-${i + 1}`, index: i }))
 
   return out
+}
+
+function isMissingLikeElement(element: { text?: string; effectiveness?: string }) {
+  return !element?.text?.trim() || element.effectiveness === "Missing"
+}
+
+function fallbackSuggestionForMissing(entry: ElementEntry): string {
+  const n = entry.index !== undefined ? entry.index + 1 : null
+  switch (entry.name) {
+    case "position":
+      return "You should add a clear position statement that directly answers the prompt and states your main viewpoint."
+    case "claim":
+      return `You should introduce ${n === 2 ? "a second claim" : "a clear claim"} that presents another reason supporting your position.`
+    case "evidence":
+      return `You should add ${n === 2 ? "a second piece of evidence" : "a piece of evidence"} (for example, a fact, statistic, or concrete example) to support this claim.`
+    case "counterclaim":
+      return "You should include a counterclaim that presents a reasonable opposing viewpoint."
+    case "counterclaim_evidence":
+      return "You should add evidence for the counterclaim so the opposing side is presented fairly and concretely."
+    case "rebuttal":
+      return "You should add a rebuttal that directly responds to the counterclaim and reinforces your position."
+    case "rebuttal_evidence":
+      return "You should add evidence for your rebuttal to show why your response is credible."
+    case "lead":
+      return "You should add a lead that introduces the topic and prepares the reader for your argument."
+    case "conclusion":
+      return "You should add a concluding summary that restates your position and final takeaway."
+    default:
+      return "You should add this missing argumentative element to make your essay more complete."
+  }
+}
+
+function fallbackReasonForMissing(entry: ElementEntry): string {
+  switch (entry.name) {
+    case "claim":
+      return "Additional claims strengthen your argument by adding depth and covering more than one aspect of the issue. Without enough claims, the essay can feel underdeveloped."
+    case "evidence":
+      return "Evidence makes a claim convincing by showing concrete support. Without evidence, readers may see the point as an unsupported opinion."
+    case "position":
+      return "A clear position anchors the whole essay and tells readers exactly what you are arguing. Without it, the argument can feel unclear."
+    case "counterclaim":
+      return "A counterclaim improves balance and shows you understand other perspectives. Without it, the argument may appear one-sided."
+    case "rebuttal":
+      return "A rebuttal shows why your position still stands after considering the opposing view. Without it, persuasion is weaker."
+    default:
+      return "This element improves structure, clarity, and persuasiveness by making your reasoning complete and easier for readers to follow."
+  }
 }
 
 function setValueByPath(target: Record<string, any>, path: string, value: any) {
@@ -484,7 +531,7 @@ async function batchFeedbackAll(elements: ElementEntry[], prompt: string): Promi
 
   const list = effective.map((e, i) => {
     const label = e.index !== undefined ? `${e.name} #${e.index + 1}` : e.name
-    return `${i}. ${label}\n   Text: "${e.element.text}"\n   Effectiveness: ${e.element.effectiveness}`
+    return `${i}. ${label}\n   Element ID: ${e.elementId}\n   Text: "${e.element.text}"\n   Effectiveness: ${e.element.effectiveness}`
   }).join("\n\n")
 
   const completion = await openai.chat.completions.create({
@@ -545,7 +592,7 @@ async function batchSuggestionsAndReasonsAll(
 
   const list = needs.map((e, i) => {
     const label = e.index !== undefined ? `${e.name} #${e.index + 1}` : e.name
-    return `${i}. ${label}\n   Original: "${e.element.text}"\n   Effectiveness: ${e.element.effectiveness}`
+    return `${i}. ${label}\n   Element ID: ${e.elementId}\n   Original: "${e.element.text}"\n   Effectiveness: ${e.element.effectiveness}`
   }).join("\n\n")
 
   const completion = await openai.chat.completions.create({
@@ -564,6 +611,7 @@ For EACH element below, provide:
    - Text quality: How it improves writing quality (e.g., coherence, clarity) with a cause-effect explanation
 
 Be specific, natural, and concise. Avoid vague statements.
+If an element is Missing or has empty text, you MUST still return an item with a practical suggestion and reason explaining what to add.
 
 Example output for one element:
 {
@@ -577,7 +625,7 @@ Example output for one element:
 Return JSON:
 {
   "items": [
-    {"suggestion": "...", "reason": "..."},
+    {"elementId": "...", "suggestion": "...", "reason": "..."},
     ...
   ]
 }
@@ -592,13 +640,20 @@ Return valid json only.
   })
 
   const result = JSON.parse(completion.choices[0].message.content || '{"items":[]}')
-  const items: Array<{ suggestion: string; reason: string | Record<string, string> }> = result.items || []
+  const items: Array<{ elementId?: string; suggestion: string; reason: string | Record<string, string> }> = result.items || []
+  const itemsById = new Map<string, { suggestion: string; reason: string | Record<string, string> }>()
+  items.forEach((item) => {
+    const id = typeof item.elementId === "string" ? item.elementId.trim() : ""
+    if (!id) return
+    itemsById.set(id, item)
+  })
 
   needs.forEach((e, i) => {
-    fullSuggestions[e.originalIndex] = items[i]?.suggestion || ""
+    const responseItem = itemsById.get(e.elementId) ?? items[i]
+    fullSuggestions[e.originalIndex] = responseItem?.suggestion || ""
 
     // FIX: handle reason as either a plain string or an object with sub-fields
-    const rawReason = items[i]?.reason
+    const rawReason = responseItem?.reason
     if (rawReason && typeof rawReason === "object") {
       const r = rawReason as { rhetorical_function?: string; reader_impact?: string; text_quality?: string }
       fullReasons[e.originalIndex] = [
@@ -610,6 +665,15 @@ Return valid json only.
         .join(" ")
     } else {
       fullReasons[e.originalIndex] = typeof rawReason === "string" ? rawReason : ""
+    }
+
+    if (isMissingLikeElement(e.element)) {
+      if (!fullSuggestions[e.originalIndex]) {
+        fullSuggestions[e.originalIndex] = fallbackSuggestionForMissing(e)
+      }
+      if (!fullReasons[e.originalIndex]) {
+        fullReasons[e.originalIndex] = fallbackReasonForMissing(e)
+      }
     }
   })
 
