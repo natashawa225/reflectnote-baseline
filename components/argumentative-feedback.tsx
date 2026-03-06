@@ -178,6 +178,13 @@ export function ArgumentativeFeedback({ analysis, essay, isAnalyzing, onHighligh
   )
   const currentElementEffectiveness = currentElement ? getDisplayEffectiveness(currentElement) : null
   const isOptionalCounterclaimEvidence = selectedParsed?.elementKey === "counterclaim_evidence"
+  const isEvidenceElement = selectedParsed?.elementKey === "evidence"
+  const selectedCorrectionKey = selectedElement ?? ""
+  const suggestedCorrection =
+    ((currentElement as (ArgumentElement & { suggested_correction?: string }) | null)?.suggested_correction ??
+      currentElement?.suggestion ??
+      "") || ""
+  const shouldShowCorrections = isEvidenceElement ? showCorrections.has(selectedCorrectionKey) : true
 
   if (isAnalyzing) {
     return (
@@ -271,53 +278,36 @@ export function ArgumentativeFeedback({ analysis, essay, isAnalyzing, onHighligh
                           </p>
                         )}
 
-                        <div className="flex items-start gap-3">
-                              <div className="flex-1">
-                                <div className="mt-3 p-3 rounded-lg bg-red-50 border border-red-200 animate-in slide-in-from-top-2 duration-200">
-                                  <h5 className="font-medium mb-2 text-red-800">
-                                  优化表达示例:
-                                  </h5>
-                                  <p className="text-sm text-red-700">
-                                    {currentElement.suggestion}
-                                  </p>
-                                </div>
-                                <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 animate-in slide-in-from-top-2 duration-200">
-                                <h5 className="font-medium mb-2 text-amber-800">优化说明:</h5>
-                                <p className="text-sm text-amber-700">{currentElement.reason}</p>
-                                </div>
-                              </div>
-                        </div>
-
-                        {/* <div className="flex justify-end mt-2">
-                          <Button
-                            size="sm"
-                            className="bg-white shadow-sm text-primary font-medium hover:bg-white hover:shadow-md hover:text-primary"
-                            onClick={() => toggleCorrection(selectedElement)}
-                          >
-                            {showCorrections.has(selectedElement)
-                              ? "Hide Correction"
-                              : "Show Correction"}
-                          </Button>
-                        </div>
-
-                        {showCorrections.has(selectedElement) &&
-                          currentElement.suggestion && (
-                            <div className="mt-3 p-3 rounded-lg bg-red-50 border border-red-200 animate-in slide-in-from-top-2 duration-200">
-                              <h5 className="font-medium mb-2 text-red-800">
-                                Suggested Correction:
-                              </h5>
-                              <p className="text-sm text-red-700">
-                                {currentElement.suggestion}
-                              </p>
-                            </div>
-                          )}
-
-                        {showCorrections.has(selectedElement) && currentElement.reason && (
-                          <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 animate-in slide-in-from-top-2 duration-200">
-                            <h5 className="font-medium mb-2 text-amber-800">Reason:</h5>
-                            <p className="text-sm text-amber-700">{currentElement.reason}</p>
+                        {isEvidenceElement && selectedElement && (
+                          <div className="flex justify-end mt-2">
+                            <Button
+                              size="sm"
+                              className="bg-white shadow-sm text-primary font-medium hover:bg-white hover:shadow-md hover:text-primary"
+                              onClick={() => toggleCorrection(selectedElement)}
+                            >
+                              {showCorrections.has(selectedElement) ? "Hide Correction" : "Show Correction"}
+                            </Button>
                           </div>
-                        )} */}
+                        )}
+
+                        {shouldShowCorrections && (
+                          <div className="flex items-start gap-3">
+                            <div className="flex-1">
+                              {suggestedCorrection && (
+                                <div className="mt-3 p-3 rounded-lg bg-red-50 border border-red-200 animate-in slide-in-from-top-2 duration-200">
+                                  <h5 className="font-medium mb-2 text-red-800">优化表达示例:</h5>
+                                  <p className="text-sm text-red-700">{suggestedCorrection}</p>
+                                </div>
+                              )}
+                              {currentElement.reason && (
+                                <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 animate-in slide-in-from-top-2 duration-200">
+                                  <h5 className="font-medium mb-2 text-amber-800">优化说明:</h5>
+                                  <p className="text-sm text-amber-700">{currentElement.reason}</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

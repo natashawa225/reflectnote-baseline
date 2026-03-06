@@ -152,7 +152,7 @@ export default function ArgumentativeWritingAssistant() {
       feedbackLevel?: FeedbackLevel
       metadata?: Record<string, unknown>
     }) => {
-      if (!sessionId) return
+      if (!sessionId) return false
 
       try {
         const response = await fetch("/api/interaction-log", {
@@ -170,9 +170,10 @@ export default function ArgumentativeWritingAssistant() {
           const failure = await response.json().catch(() => null)
           throw new Error(failure?.error || `Failed to log interaction (${response.status})`)
         }
+        return true
       } catch (error) {
         console.error("Failed to log interaction", error)
-        throw error
+        return false
       }
     },
     [sessionId],
@@ -180,7 +181,7 @@ export default function ArgumentativeWritingAssistant() {
 
   const insertDraftSnapshot = useCallback(
     async ({ stage, draftText, issueId }: { stage: string; draftText: string; issueId?: string | null }) => {
-      if (!sessionId) return
+      if (!sessionId) return false
 
       try {
         const response = await fetch("/api/draft-snapshot", {
@@ -197,9 +198,10 @@ export default function ArgumentativeWritingAssistant() {
           const failure = await response.json().catch(() => null)
           throw new Error(failure?.error || `Failed to insert draft snapshot (${response.status})`)
         }
+        return true
       } catch (error) {
         console.error("Failed to insert draft snapshot", error)
-        throw error
+        return false
       }
     },
     [sessionId],
@@ -249,7 +251,7 @@ export default function ArgumentativeWritingAssistant() {
 
     try {
       if (!hasLoggedInitialDraft) {
-        await Promise.all([
+        const results = await Promise.allSettled([
           logInteraction({
             eventType: "initial_draft",
             metadata: { source: "analyze_button_first_submission" },
@@ -259,6 +261,11 @@ export default function ArgumentativeWritingAssistant() {
             draftText: essay,
           }),
         ])
+        results.forEach((result, index) => {
+          if (result.status === "rejected") {
+            console.error("Initial draft logging task failed", { taskIndex: index, reason: result.reason })
+          }
+        })
         setHasLoggedInitialDraft(true)
       }
 
@@ -266,7 +273,7 @@ export default function ArgumentativeWritingAssistant() {
         setAnalyzeClickedAt(new Date().toISOString())
       }
 
-      await logInteraction({
+      void logInteraction({
         eventType: "analyze_clicked",
         metadata: { source: "analyze_button" },
       })

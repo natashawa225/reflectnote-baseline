@@ -84,6 +84,10 @@ function normalizeTextContent(value: string): string {
   return value.replace(/<[^>]+>/g, "").trim()
 }
 
+function isMissingElementText(text?: string): boolean {
+  return !text || text.trim().length === 0
+}
+
 function extractTopLevelNodes(input: string): XMLNode[] {
   const nodes: XMLNode[] = []
   const openTagPattern = /<(L1|P1|C1|D1|CT1|CD1|R1|RD1|S1)([^>]*)>/g
@@ -152,7 +156,7 @@ function parseXMLOutput(xml: string): ParsedXML {
     const parentClaimId = getAttributeValue(attributes, "parentClaimId") ?? getAttributeValue(attributes, "parent")
     const text = normalizeTextContent(inner)
     let effectiveness = normalizeEffectiveness(rawEffectiveness)
-    if (!text) {
+    if (isMissingElementText(text)) {
       effectiveness = "Missing"
     }
 
@@ -211,12 +215,21 @@ function makeEmpty() {
 }
 
 function toElement(el: ParsedElement | undefined, id?: string, parentClaimId?: string) {
-  if (!el) return makeEmpty()
+  if (!el) {
+    return {
+      ...makeEmpty(),
+      ...(id ? { id } : {}),
+      ...(parentClaimId ? { parentClaimId } : {}),
+    }
+  }
+  const normalizedText = typeof el.text === "string" ? el.text.trim() : ""
+  const normalizedEffectiveness = isMissingElementText(normalizedText) ? "Missing" : (el.effectiveness as any)
+
   return {
     id: id ?? (el as any).id,
     parentClaimId: parentClaimId ?? (el as any).parentClaimId,
-    text: el.text,
-    effectiveness: el.effectiveness as any,
+    text: normalizedText,
+    effectiveness: normalizedEffectiveness,
     feedback: [],
     suggestion: "",
     reason: "",
@@ -224,29 +237,86 @@ function toElement(el: ParsedElement | undefined, id?: string, parentClaimId?: s
 }
 
 function enrichElements(parsed: ParsedXML) {
-  const claimIdMap = new Map<string, string>()
-  const claimIds = parsed.claims.map((claim, i) => {
-    const normalized = `claim-${i + 1}`
+  const claimIds = ["claim-1", "claim-2"] as const
+
+  const parsedClaimsById = new Map<string, ParsedElement>()
+  parsed.claims.forEach((claim) => {
     const rawId = (claim as any).id
     if (typeof rawId === "string" && rawId.trim()) {
-      claimIdMap.set(rawId, normalized)
+      parsedClaimsById.set(rawId, claim)
     }
-    return normalized
   })
+
+  const usedClaimRefs = new Set<ParsedElement>()
+  const pickClaimByIdOrOrder = (targetId: (typeof claimIds)[number], orderIndex: number): ParsedElement | undefined => {
+    const byId = parsedClaimsById.get(targetId)
+    if (byId) {
+      usedClaimRefs.add(byId)
+      return byId
+    }
+
+    const fallback = parsed.claims.find((c) => !usedClaimRefs.has(c)) ?? parsed.claims[orderIndex]
+    if (fallback) {
+      usedClaimRefs.add(fallback)
+      return fallback
+    }
+    return undefined
+  }
+
+  const selectedClaims = claimIds.map((claimId, i) => pickClaimByIdOrOrder(claimId, i))
+  const normalizedClaims = claimIds.map((claimId, i) => toElement(selectedClaims[i], claimId))
+
+  const claimAliasToCanonical = new Map<string, string>()
+  claimIds.forEach((id) => claimAliasToCanonical.set(id, id))
+  selectedClaims.forEach((claim, i) => {
+    const canonical = claimIds[i]
+    const rawId = (claim as any)?.id
+    if (typeof rawId === "string" && rawId.trim()) {
+      claimAliasToCanonical.set(rawId, canonical)
+    }
+  })
+
+  const normalizeParentClaimId = (rawParent?: string): string | undefined => {
+    if (!rawParent) return undefined
+    return claimAliasToCanonical.get(rawParent)
+  }
+
+  const evidenceByClaim = new Map<string, Array<ReturnType<typeof toElement>>>()
+  claimIds.forEach((claimId) => evidenceByClaim.set(claimId, []))
+
+  parsed.evidence.forEach((ev, i) => {
+    const rawParent = (ev as any).parentClaimId as string | undefined
+    const parent = normalizeParentClaimId(rawParent)
+    if (!parent) return
+
+    const rawEvidenceId = (ev as any).id as string | undefined
+    const evidenceId = rawEvidenceId && rawEvidenceId.trim() ? rawEvidenceId : `evidence-${i + 1}`
+    const bucket = evidenceByClaim.get(parent)
+    bucket?.push(toElement(ev, evidenceId, parent))
+  })
+
+  if ((evidenceByClaim.get("claim-1") ?? []).length === 0) {
+    evidenceByClaim.get("claim-1")?.push(toElement(undefined, "evidence-1", "claim-1"))
+  }
+  if ((evidenceByClaim.get("claim-2") ?? []).length === 0) {
+    evidenceByClaim.get("claim-2")?.push(toElement(undefined, "evidence-2", "claim-2"))
+  }
+
+  const normalizedEvidence = [
+    ...(evidenceByClaim.get("claim-1") ?? []),
+    ...(evidenceByClaim.get("claim-2") ?? []),
+  ]
+
   return {
     elements: {
       lead:                 toElement(parsed.lead, "lead-1"),
       position:             toElement(parsed.position, "position-1"),
-      claims:               parsed.claims.map((claim, i) => toElement(claim, claimIds[i])),
+      claims:               normalizedClaims,
       counterclaim:         toElement(parsed.counterclaims[0], "counterclaim-1"),
       counterclaim_evidence:toElement(parsed.counterclaim_evidence[0], "counterclaim-evidence-1"),
       rebuttal:             toElement(parsed.rebuttals[0], "rebuttal-1"),
       rebuttal_evidence:    toElement(parsed.rebuttal_evidence[0], "rebuttal-evidence-1"),
-      evidence:             parsed.evidence.map((ev, i) => {
-        const parsedParent = (ev as any).parentClaimId
-        const mappedParent = parsedParent ? claimIdMap.get(parsedParent) : undefined
-        return toElement(ev, `evidence-${i + 1}`, mappedParent ?? parsedParent)
-      }),
+      evidence:             normalizedEvidence,
       conclusion:           toElement(parsed.conclusion, "conclusion-1"),
     },
   }
