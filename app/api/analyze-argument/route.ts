@@ -544,13 +544,23 @@ async function batchFeedbackAll(elements: ElementEntry[], prompt: string): Promi
 
 Essay prompt: """${prompt}"""
 
-Rules:
-- Give positive reinforcement and explain what makes it strong
-- Suggest how to push it even further
+Language requirement:
+- The feedback content MUST be written in Simplified Chinese.
+- Do NOT write English explanations.
 
-Use simple, student-friendly language.
-Keep the tone supportive and encouraging.
-Focus only on the selected element.
+Feedback style:
+- Use simple, student-friendly language.
+- Use a supportive, teacher-like tone.
+
+Your explanation may implicitly reflect ONE of the following:
+- rhetorical function
+- reader impact
+- text quality
+
+Rules:
+  * Give positive reinforcement and explain why the element works well.
+  * Suggest how it could be developed further
+
 
 Return JSON: {"feedback": [["point1", "point2", "point3"], ...]}`
       },

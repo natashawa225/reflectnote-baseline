@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { insertDraftSnapshot } from "@/lib/interaction-logs-server"
+import { getDraftSnapshotBySessionAndStage, insertDraftSnapshot } from "@/lib/interaction-logs-server"
 
 const bodySchema = z.object({
   session_id: z.string().uuid(),
@@ -18,18 +18,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request body", details: parsed.error.issues }, { status: 400 })
     }
 
-    const row = await insertDraftSnapshot({
-      session_id: parsed.data.session_id,
-      issue_id: parsed.data.issue_id ?? null,
-      stage: parsed.data.stage,
-      draft_text: parsed.data.draft_text,
-      timestamp: parsed.data.timestamp,
-    })
+    const sessionId = parsed.data.session_id
+    const stage = parsed.data.stage
+    const dedupeStage = stage === "initial" || stage === "final"
+
+    let row = dedupeStage ? await getDraftSnapshotBySessionAndStage(sessionId, stage) : null
+
+    if (!row) {
+      row = await insertDraftSnapshot({
+        session_id: sessionId,
+        issue_id: parsed.data.issue_id ?? null,
+        stage,
+        draft_text: parsed.data.draft_text,
+        timestamp: parsed.data.timestamp,
+      })
+    }
 
     return NextResponse.json({ success: true, row })
   } catch (error) {
     console.error("draft-snapshot POST failed", error)
-    const message = error instanceof Error ? error.message : "Failed to save draft snapshot"
-    return NextResponse.json({ error: message }, { status: 500 })
+    return NextResponse.json({ error: "Failed to save draft snapshot" }, { status: 500 })
   }
 }
+

@@ -19,8 +19,8 @@ const bodySchema = z.object({
 function normalizeElementType(raw: string): string {
   const value = raw.trim().toLowerCase()
   if (value === "claims") return "claim"
-  if (value === "evidences") return "evidence"
-  if (value === "counterclaim" || value === "counterclaims") return "rebuttal"
+  if (value === "evidence" || value === "evidences") return "evidence"
+  if (value === "counterclaims") return "counterclaim"
   return value
 }
 

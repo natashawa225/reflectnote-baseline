@@ -14,6 +14,8 @@ export interface SessionRow {
   condition: string
   started_at: string
   submitted_at: string | null
+  student_name?: string | null
+  student_id?: string | null
 }
 
 export interface IssueRow {
@@ -84,8 +86,17 @@ function getSupabaseConfig() {
   return { supabaseUrl, serviceRoleKey }
 }
 
-export async function upsertSession(sessionId: string, condition: SessionCondition = "baseline"): Promise<SessionRow> {
+export async function upsertSession(
+  sessionId: string,
+  condition: SessionCondition = "multilevel",
+  options?: {
+    studentName?: string
+    studentId?: string
+    startedAt?: string
+  },
+): Promise<SessionRow> {  
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig()
+  const startedAt = options?.startedAt ?? new Date().toISOString()
 
   const response = await fetch(`${supabaseUrl}/rest/v1/sessions`, {
     method: "POST",
@@ -98,6 +109,10 @@ export async function upsertSession(sessionId: string, condition: SessionConditi
     body: JSON.stringify({
       id: sessionId,
       condition,
+      started_at: startedAt,
+      submitted_at: null,
+      student_name: options?.studentName?.trim() || null,
+      student_id: options?.studentId?.trim() || null,
     }),
   })
 
