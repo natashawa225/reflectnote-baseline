@@ -9,11 +9,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
 import { EssayEditor } from "@/components/essay-editor"
 import { FeedbackPanel } from "@/components/feedback-panel"
-import type { FeedbackLevel } from "@/lib/interaction-logs-server"
+import type { FeedbackLevel, SessionCondition } from "@/lib/interaction-logs-server"
 import { getOrCreateSessionId } from "@/lib/deviceId"
 import { analyzeArgumentativeStructure } from "@/lib/analysis"
 import type { AnalysisResult, Highlight, ArgumentElementKey } from "@/lib/types"
-import { Sparkles, BookOpen, AlertCircle, Send } from "lucide-react"
+import { Sparkles, BookOpen, AlertCircle, Send, FileDown } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import rehypeRaw from "rehype-raw"
 
@@ -43,14 +43,14 @@ interface RevisionBehaviorData {
 
 interface IssueRegistryRow {
   issueId: string
-  initialText: string
+  initialText: string | null
 }
 
 function normalizeElementType(raw: string): string {
   const value = raw.trim().toLowerCase()
   if (value === "claims") return "claim"
-  if (value === "evidences") return "evidence"
-  if (value === "counterclaim" || value === "counterclaims") return "rebuttal"
+  if (value === "evidence" || value === "evidences") return "evidence"
+  if (value === "counterclaims") return "counterclaim"
   return value
 }
 
@@ -84,6 +84,7 @@ export default function ArgumentativeWritingAssistant() {
   const [issueRegistry, setIssueRegistry] = useState<Record<string, IssueRegistryRow>>({})
 
   const editDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const initialDraftCaptureInFlightRef = useRef<Promise<boolean> | null>(null)
   
   const lastEditLoggedEssayRef = useRef("")
 
@@ -91,6 +92,11 @@ export default function ArgumentativeWritingAssistant() {
   const [analysisError, setAnalysisError] = useState<string | null>(null)
   const lastPersistedEssayRef = useRef("")
   const [nowMs, setNowMs] = useState(Date.now())
+  const [studentName, setStudentName] = useState("")
+  const [studentId, setStudentId] = useState("")
+  const [hasStartedSession, setHasStartedSession] = useState(false)
+  const currentCondition: SessionCondition = "baseline"
+  const [hasSubmittedInfo, setHasSubmittedInfo] = useState(false)
 
   useEffect(() => {
     const id = getOrCreateSessionId()
@@ -151,7 +157,7 @@ export default function ArgumentativeWritingAssistant() {
       issueId?: string | null
       feedbackLevel?: FeedbackLevel
       metadata?: Record<string, unknown>
-    }) => {
+    }): Promise<boolean> => {
       if (!sessionId) return false
 
       try {
@@ -176,11 +182,59 @@ export default function ArgumentativeWritingAssistant() {
         return false
       }
     },
-    [sessionId],
+    [hasStartedSession, sessionId],
   )
+    // PDF export function
+    const handleExportPDF = () => {
+      const printContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Revision Insights - ${studentName}</title>
+            <style>
+              body { font-family: Georgia, serif; max-width: 700px; margin: 40px auto; color: #1a1a1a; line-height: 1.6; }
+              h1 { font-size: 1.5rem; border-bottom: 2px solid #333; padding-bottom: 8px; }
+              .meta { color: #555; font-size: 0.9rem; margin-bottom: 24px; }
+              h3 { font-size: 1.1rem; margin-top: 20px; }
+              li { margin-left: 20px; margin-bottom: 4px; }
+              p { margin-bottom: 8px; }
+              .stats { background: #f5f5f5; padding: 12px; border-radius: 4px; margin-bottom: 16px; font-size: 0.9rem; }
+            </style>
+          </head>
+          <body>
+            <h1>Revision Insights</h1>
+            <div class="meta">
+              <strong>Name:</strong> ${studentName} &nbsp;|&nbsp;
+              <strong>Student ID:</strong> ${studentId} &nbsp;|&nbsp;
+              <strong>Date:</strong> ${new Date().toLocaleDateString()}
+            </div>
+            ${revisionData ? `
+            <div class="stats">
+              <strong>Revisions made:</strong> ${revisionData.totalEditsAfterAnalyze} &nbsp;|&nbsp;
+              <strong>Revision window:</strong> ${revisionData.revisionWindowMinutes} minutes
+            </div>` : ""}
+            <div>${revisionInsights
+              .replace(/### (.+)/g, "<h3>$1</h3>")
+              .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+              .replace(/\n- /g, "\n<li>")
+              .replace(/\n/g, "<br>")
+            }</div>
+          </body>
+        </html>
+      `
+  
+      const printWindow = window.open("", "_blank")
+      if (printWindow) {
+        printWindow.document.write(printContent)
+        printWindow.document.close()
+        printWindow.focus()
+        printWindow.print()
+        printWindow.close()
+      }
+    }
 
   const insertDraftSnapshot = useCallback(
-    async ({ stage, draftText, issueId }: { stage: string; draftText: string; issueId?: string | null }) => {
+    async ({ stage, draftText, issueId }: { stage: string; draftText: string; issueId?: string | null }): Promise<boolean> => {
       if (!sessionId) return false
 
       try {
@@ -203,12 +257,79 @@ export default function ArgumentativeWritingAssistant() {
         console.error("Failed to insert draft snapshot", error)
         return false
       }
+    
+
+      // try {
+      //   const response = await fetch("/api/draft-snapshot", {
+      //     method: "POST",
+      //     headers: { "Content-Type": "application/json" },
+      //     body: JSON.stringify({
+      //       session_id: sessionId,
+      //       issue_id: issueId ?? null,
+      //       stage,
+      //       draft_text: draftText,
+      //     }),
+      //   })
+      //   if (!response.ok) {
+      //     const failure = await response.json().catch(() => null)
+      //     throw new Error(failure?.error || `Failed to insert draft snapshot (${response.status})`)
+      //   }
+      //   return true
+      // } catch (error) {
+      //   console.error("Failed to insert draft snapshot", error)
+      //   return false
+      // }
     },
-    [sessionId],
+    [hasStartedSession, sessionId],
   )
 
+  const ensureInitialDraftCaptured = useCallback(
+    async (source: string): Promise<boolean> => {
+      if (!sessionId) return false
+      const currentDraft = essay.trim()
+      if (!currentDraft) return false
+      if (hasLoggedInitialDraft) return true
+
+      if (initialDraftCaptureInFlightRef.current) {
+        return initialDraftCaptureInFlightRef.current
+      }
+
+      const capturePromise = (async () => {
+        const [logOk, snapshotOk] = await Promise.all([
+          logInteraction({
+            eventType: "initial_draft",
+            metadata: { source },
+          }),
+          insertDraftSnapshot({
+            stage: "initial",
+            draftText: currentDraft,
+          }),
+        ])
+        const success = logOk && snapshotOk
+        if (success) {
+          setHasLoggedInitialDraft(true)
+        } else {
+          console.error("Initial draft capture did not complete successfully", { logOk, snapshotOk, source })
+        }
+        return success
+      })()
+
+      initialDraftCaptureInFlightRef.current = capturePromise
+      const result = await capturePromise
+      initialDraftCaptureInFlightRef.current = null
+      return result
+    },
+    [essay, hasLoggedInitialDraft, hasStartedSession, insertDraftSnapshot, logInteraction, sessionId],
+  )
   useEffect(() => {
-    if (!sessionId || !analyzeClickedAt || isSubmitted) return
+    if (!sessionId || !hasStartedSession || hasLoggedInitialDraft) return
+    if (!essay.trim()) return
+
+    void ensureInitialDraftCaptured("first_non_empty_draft")
+  }, [ensureInitialDraftCaptured, essay, hasLoggedInitialDraft, hasStartedSession, sessionId])
+
+  useEffect(() => {
+    if (!sessionId || !hasStartedSession || !analyzeClickedAt || isSubmitted) return
     if (!essay.trim()) return
     if (essay === lastEditLoggedEssayRef.current) return
 
@@ -241,55 +362,89 @@ export default function ArgumentativeWritingAssistant() {
         clearTimeout(editDebounceRef.current)
       }
     }
-  }, [analyzeClickedAt, essay, insertDraftSnapshot, isSubmitted, logInteraction, sessionId])
+  }, [analyzeClickedAt, essay, hasStartedSession, insertDraftSnapshot, isSubmitted, logInteraction, sessionId])
+
+  const startSessionIfNeeded = useCallback(async () => {
+    if (!sessionId) throw new Error("Session ID is unavailable.")
+    if (hasStartedSession) return
+
+    const response = await fetch("/api/session/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: sessionId,
+        condition: currentCondition,
+        student_name: studentName,
+        student_id: studentId,
+      }),
+    })
+
+    if (!response.ok) {
+      const failure = await response.json().catch(() => null)
+      throw new Error(failure?.error || "Failed to start session")
+    }
+
+    setHasStartedSession(true)
+  }, [currentCondition, hasStartedSession, sessionId, studentId, studentName])
 
   const handleAnalyze = async () => {
-    if (!essay.trim() || isSubmitted) return
+    const firstDraftText = essay.trim()
+    const trimmedStudentName = studentName.trim()
+    const trimmedStudentId = studentId.trim()
+    if (!firstDraftText || isSubmitted || !trimmedStudentName || !trimmedStudentId) return
 
     setIsAnalyzing(true)
     setIsPanelOpen(true)
 
     try {
-      if (!hasLoggedInitialDraft) {
-        const results = await Promise.allSettled([
-          logInteraction({
-            eventType: "initial_draft",
-            metadata: { source: "analyze_button_first_submission" },
-          }),
-          insertDraftSnapshot({
-            stage: "initial",
-            draftText: essay,
-          }),
-        ])
-        results.forEach((result, index) => {
-          if (result.status === "rejected") {
-            console.error("Initial draft logging task failed", { taskIndex: index, reason: result.reason })
-          }
-        })
-        setHasLoggedInitialDraft(true)
-      }
+      await startSessionIfNeeded()
 
       if (!analyzeClickedAt) {
         setAnalyzeClickedAt(new Date().toISOString())
       }
 
-      void logInteraction({
+      await logInteraction({
         eventType: "analyze_clicked",
         metadata: { source: "analyze_button" },
       })
 
       lastEditLoggedEssayRef.current = essay
 
-      const argResult = await analyzeArgumentativeStructure(essay, selectedPrompt)
+      if (!hasLoggedInitialDraft) {
+        const captured = await ensureInitialDraftCaptured("analyze_button_first_submission")
+        if (!captured) {
+          throw new Error("Failed to persist initial draft snapshot")
+        }
+      }
+
+      const argResult = await analyzeArgumentativeStructure(firstDraftText, selectedPrompt)
       setArgumentAnalysis(argResult)
 
       const newHighlights: Highlight[] = []
 
       Object.entries(argResult.elements).forEach(([key, element]) => {
+        const feedbackToText = (fb: unknown): string => {
+          if (fb == null) return ""
+          if (Array.isArray(fb)) {
+            return fb
+              .map((item) => (typeof item === "string" ? item : JSON.stringify(item)))
+              .join(" ")
+              .trim()
+          }
+          if (typeof fb === "object") {
+            try {
+              return JSON.stringify(fb)
+            } catch {
+              return ""
+            }
+          }
+          return String(fb)
+        }
+
         if (Array.isArray(element)) {
           element.forEach((el, index) => {
             if (el.text && el.text.trim()) {
-              const start = essay.indexOf(el.text)
+              const start = firstDraftText.indexOf(el.text)
               if (start !== -1) {
                 newHighlights.push({
                   id: `${key}-${index}`,
@@ -300,14 +455,14 @@ export default function ArgumentativeWritingAssistant() {
                   type: "argument",
                   subtype: key,
                   color: getHighlightColor(el.effectiveness),
-                  feedback: el.feedback,
+                  feedback: feedbackToText(el.feedback),
                   persistent: true,
                 })
               }
             }
           })
         } else if (element.text && element.text.trim()) {
-          const start = essay.indexOf(element.text)
+          const start = firstDraftText.indexOf(element.text)
           if (start !== -1) {
             newHighlights.push({
               id: key,
@@ -318,7 +473,7 @@ export default function ArgumentativeWritingAssistant() {
               type: "argument",
               subtype: key,
               color: getHighlightColor(element.effectiveness),
-              feedback: element.feedback,
+              feedback: feedbackToText(element.feedback),
               persistent: true,
             })
           }
@@ -327,14 +482,59 @@ export default function ArgumentativeWritingAssistant() {
 
       setHighlights(newHighlights)
 
-      if (sessionId && newHighlights.length > 0) {
-        const issuesPayload = newHighlights.map((highlight, index) => ({
-          client_key: highlight.id,
-          element_type: normalizeElementType(highlight.subtype ?? highlight.elementId),
+      if (sessionId) {
+        const issueCandidates: Array<{
+          client_key: string
+          element_type: string
+          initial_text: string | null
+          original_text: string | null
+        }> = []
+
+        const pushIssueCandidate = (clientKey: string, elementType: string, text: string | undefined) => {
+          const normalizedText = text?.trim() ? text : null
+          issueCandidates.push({
+            client_key: clientKey,
+            element_type: normalizeElementType(elementType),
+            initial_text: normalizedText,
+            original_text: normalizedText,
+          })
+        }
+
+        // Use stable IDs that match ArgumentDiagram / ArgumentativeFeedback element IDs
+        pushIssueCandidate("lead", "lead", argResult.elements.lead.text)
+        pushIssueCandidate("position", "position", argResult.elements.position.text)
+
+        argResult.elements.claims.slice(0, 2).forEach((claim, index) => {
+          const explicitId = (claim.id ?? "").trim()
+          const clientKey = explicitId || `claim-${index + 1}`
+          pushIssueCandidate(clientKey, "claim", claim.text)
+        })
+
+        pushIssueCandidate("counterclaim", "counterclaim", argResult.elements.counterclaim.text)
+
+        argResult.elements.evidence.slice(0, 2).forEach((evidence, index) => {
+          const explicitId = (evidence.id ?? "").trim()
+          const clientKey = explicitId || `evidence-${index + 1}`
+          pushIssueCandidate(clientKey, "evidence", evidence.text)
+        })
+
+        pushIssueCandidate("rebuttal", "rebuttal", argResult.elements.rebuttal.text)
+        pushIssueCandidate("counterclaim_evidence", "counterclaim_evidence", argResult.elements.counterclaim_evidence.text)
+        pushIssueCandidate("rebuttal_evidence", "rebuttal_evidence", argResult.elements.rebuttal_evidence.text)
+        pushIssueCandidate("conclusion", "conclusion", argResult.elements.conclusion.text)
+
+        const issuesPayload = issueCandidates.map((issue, index) => ({
+          ...issue,
           issue_index: index + 1,
-          initial_text: highlight.text,
-          original_text: highlight.text,
         }))
+
+        // const issuesPayload = newHighlights.map((highlight, index) => ({
+        //   client_key: highlight.id,
+        //   element_type: normalizeElementType(highlight.subtype ?? highlight.elementId),
+        //   issue_index: index + 1,
+        //   initial_text: highlight.text,
+        //   original_text: highlight.text,
+        // }))
 
         const response = await fetch("/api/issues", {
           method: "POST",
@@ -347,7 +547,7 @@ export default function ArgumentativeWritingAssistant() {
 
         if (response.ok) {
           const payload = (await response.json()) as {
-            rows: Array<{ id: string; client_key: string; initial_text: string }>
+            rows: Array<{ id: string; client_key: string; initial_text: string | null }>
           }
 
           const nextRegistry: Record<string, IssueRegistryRow> = {}
@@ -369,7 +569,7 @@ export default function ArgumentativeWritingAssistant() {
   }
 
   const handleSubmit = async () => {
-    if (!sessionId || !canSubmit || isSubmitting || isSubmitted) return
+    if (!sessionId || !hasStartedSession || !canSubmit || isSubmitting || isSubmitted) return
 
     setIsSubmitting(true)
 
@@ -433,7 +633,7 @@ export default function ArgumentativeWritingAssistant() {
       feedbackLevel: 3
       issueClientKey: string
       metadata: {
-        source: "show_correction"
+        source: "argument_element_click"
         elementId: string
         elementType: string
         elementIndex: number | null
@@ -477,6 +677,7 @@ export default function ArgumentativeWritingAssistant() {
             <div className="flex items-center gap-3">
               <Button
                 onClick={handleAnalyze}
+                disabled={isAnalyzing || wordCount < 200 || isSubmitted || !studentName.trim() || !studentId.trim()}
                 className="flex items-center gap-2"
               >
                 <Sparkles className="h-4 w-4" />
@@ -485,7 +686,7 @@ export default function ArgumentativeWritingAssistant() {
 
               <Button
                 onClick={handleSubmit}
-                disabled={!canSubmit || isSubmitting || isSubmitted}
+                disabled={!canSubmit || isSubmitting || isSubmitted || !studentName.trim() || !studentId.trim()}
                 className="flex items-center gap-2"
                 variant="default"
               >
@@ -512,10 +713,43 @@ export default function ArgumentativeWritingAssistant() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BookOpen className="h-5 w-5" />
-                Select Essay Prompt
-              </CardTitle>
+              <div className="flex items-center justify-between gap-4">
+                <CardTitle className="flex items-center gap-2 shrink-0">
+                  <BookOpen className="h-5 w-5" />
+                  Select Essay Prompt
+                </CardTitle>
+                <div className="flex items-center gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Full Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      className={`w-40 rounded-md border-2 bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${
+                        !studentName.trim() ? "border-red-400" : "border-green-400"
+                      }`}
+                      
+                      placeholder="Enter Your Name"
+                      value={studentName}
+                      onChange={(e) => setStudentName(e.target.value)}
+                      disabled={isSubmitted}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Student ID <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      className={`w-45 rounded-md border-2 bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${
+                        !studentId.trim() ? "border-red-400" : "border-green-400"
+                      }`}
+                      placeholder="Enter Your Student ID"
+                      value={studentId}
+                      onChange={(e) => setStudentId(e.target.value)}
+                      disabled={isSubmitted}
+                    />
+                  </div>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <PromptSelector onPromptSelect={setSelectedPrompt} selectedPrompt={selectedPrompt} />
@@ -557,6 +791,14 @@ export default function ArgumentativeWritingAssistant() {
           <DialogHeader>
             <DialogTitle>Revision Insights</DialogTitle>
           </DialogHeader>
+
+          <div className="flex items-center justify-between text-sm text-muted-foreground mb-1">
+            <span>{studentName} · {studentId}</span>
+            <Button variant="outline" size="sm" onClick={handleExportPDF} className="flex items-center gap-1">
+              <FileDown className="h-4 w-4" />
+              Export PDF
+            </Button>
+          </div>
 
           {revisionData && (
             <div className="text-sm text-muted-foreground space-y-1 mb-1">

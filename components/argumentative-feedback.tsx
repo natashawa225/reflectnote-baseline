@@ -24,7 +24,7 @@ interface ArgumentativeFeedbackProps {
     feedbackLevel: 3
     issueClientKey: string
     metadata: {
-      source: "show_correction"
+      source: "argument_element_click"
       elementId: string
       elementType: string
       elementIndex: number | null
@@ -127,7 +127,7 @@ export function ArgumentativeFeedback({ analysis, essay, isAnalyzing, onHighligh
         feedbackLevel: 3,
         issueClientKey: uniqueId,
         metadata: {
-          source: "show_correction",
+          source: "argument_element_click",
           elementId: uniqueId,
           elementType: feedback.elementKey,
           elementIndex: feedback.index,

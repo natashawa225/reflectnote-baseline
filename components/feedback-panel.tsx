@@ -29,7 +29,7 @@ interface FeedbackPanelProps {
     feedbackLevel: 3
     issueClientKey: string
     metadata: {
-      source: "show_correction"
+      source: "argument_element_click"
       elementId: string
       elementType: string
       elementIndex: number | null
