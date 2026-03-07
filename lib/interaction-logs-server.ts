@@ -166,6 +166,8 @@ export async function insertIssues(inputs: InsertIssueInput[]): Promise<IssueRow
   if (inputs.length === 0) return []
 
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig()
+  const uniqueSessionIds = [...new Set(inputs.map((input) => input.session_id))]
+  await Promise.all(uniqueSessionIds.map((sessionId) => upsertSession(sessionId, "baseline")))
 
   const response = await fetch(`${supabaseUrl}/rest/v1/issues`, {
     method: "POST",
@@ -192,6 +194,7 @@ export async function insertInteractionLog(
   input: InsertInteractionLogInput
 ): Promise<InteractionLogRow> {
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig()
+  await upsertSession(input.session_id, "baseline")
 
   const eventToFeedbackLevel: Partial<Record<InteractionEventType, FeedbackLevel>> = {
     initial_draft: 1,
@@ -240,6 +243,7 @@ export async function insertInteractionLog(
 
 export async function insertDraftSnapshot(input: InsertDraftSnapshotInput): Promise<DraftSnapshotRow> {
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig()
+  await upsertSession(input.session_id, "baseline")
 
   const response = await fetch(`${supabaseUrl}/rest/v1/draft_snapshots`, {
     method: "POST",
