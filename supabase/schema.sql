@@ -5,8 +5,14 @@ create table if not exists public.sessions (
   condition text not null check (condition in ('baseline', 'multilevel')),
   started_at timestamptz not null default now(),
   submitted_at timestamptz,
-  reflective_summary text
+  reflective_summary text,
+  student_name text,
+  student_id text
 );
+
+-- Add student columns if they were missing (e.g. table created from older schema)
+alter table public.sessions add column if not exists student_name text;
+alter table public.sessions add column if not exists student_id text;
 
 create table if not exists public.issues (
   id uuid primary key default gen_random_uuid(),

@@ -413,7 +413,7 @@ export default function ArgumentativeWritingAssistant() {
       if (!hasLoggedInitialDraft) {
         const captured = await ensureInitialDraftCaptured("analyze_button_first_submission")
         if (!captured) {
-          throw new Error("Failed to persist initial draft snapshot")
+          console.warn("Initial draft snapshot could not be persisted (check Supabase config and network). Continuing with analysis.")
         }
       }
 

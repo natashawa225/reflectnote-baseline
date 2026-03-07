@@ -37,7 +37,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, row })
   } catch (error) {
     console.error("draft-snapshot POST failed", error)
-    return NextResponse.json({ error: "Failed to save draft snapshot" }, { status: 500 })
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to save draft snapshot" },
+      { status: 500 },
+    )
   }
 }
 

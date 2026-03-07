@@ -111,8 +111,8 @@ export async function upsertSession(
       condition,
       started_at: startedAt,
       submitted_at: null,
-      student_name: options?.studentName?.trim() || null,
-      student_id: options?.studentId?.trim() || null,
+      ...(options?.studentName !== undefined && { student_name: options.studentName.trim() || null }),
+      ...(options?.studentId !== undefined && { student_id: options.studentId.trim() || null }),
     }),
   })
 
