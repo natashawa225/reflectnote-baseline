@@ -12,7 +12,7 @@ import { FeedbackPanel } from "@/components/feedback-panel"
 import type { FeedbackLevel, SessionCondition } from "@/lib/interaction-logs-server"
 import { getOrCreateSessionId } from "@/lib/deviceId"
 import { analyzeArgumentativeStructure } from "@/lib/analysis"
-import type { AnalysisResult, Highlight, ArgumentElementKey } from "@/lib/types"
+import type { AnalysisResult, Highlight, ArgumentElementKey, ArgumentElement } from "@/lib/types"
 import { Sparkles, BookOpen, AlertCircle, Send, FileDown } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import rehypeRaw from "rehype-raw"
@@ -23,6 +23,9 @@ type InteractionEventType =
   | "suggestion_revealed"
   | "edit_detected"
   | "final_submission"
+  | "revision_insights_viewed"
+  | "pdf_exported"
+  | "revision_insights_read_time"
 
 interface RevisionBehaviorData {
   totalEditsAfterAnalyze: number
@@ -97,6 +100,8 @@ export default function ArgumentativeWritingAssistant() {
   const [hasStartedSession, setHasStartedSession] = useState(false)
   const currentCondition: SessionCondition = "baseline"
   const [hasSubmittedInfo, setHasSubmittedInfo] = useState(false)
+  const insightsOpenedAtRef = useRef<number | null>(null)
+
 
   useEffect(() => {
     const id = getOrCreateSessionId()
@@ -185,7 +190,13 @@ export default function ArgumentativeWritingAssistant() {
     [hasStartedSession, sessionId],
   )
     // PDF export function
-    const handleExportPDF = () => {
+   const handleExportPDF = () => {
+      void logInteraction({
+        eventType: "pdf_exported",
+        metadata: {
+          source: "revision_insights_modal",
+        },
+      })
       const printContent = `
         <!DOCTYPE html>
         <html>
@@ -206,7 +217,7 @@ export default function ArgumentativeWritingAssistant() {
             <div class="meta">
               <strong>Name:</strong> ${studentName} &nbsp;|&nbsp;
               <strong>Student ID:</strong> ${studentId} &nbsp;|&nbsp;
-              <strong>Date:</strong> ${new Date().toLocaleDateString()}
+              <strong>D ate:</strong> ${new Date().toLocaleDateString()}
             </div>
             ${revisionData ? `
             <div class="stats">
@@ -321,12 +332,12 @@ export default function ArgumentativeWritingAssistant() {
     },
     [essay, hasLoggedInitialDraft, hasStartedSession, insertDraftSnapshot, logInteraction, sessionId],
   )
-  useEffect(() => {
-    if (!sessionId || !hasStartedSession || hasLoggedInitialDraft) return
-    if (!essay.trim()) return
+  // useEffect(() => {
+  //   if (!sessionId || !hasStartedSession || hasLoggedInitialDraft) return
+  //   if (!essay.trim()) return
 
-    void ensureInitialDraftCaptured("first_non_empty_draft")
-  }, [ensureInitialDraftCaptured, essay, hasLoggedInitialDraft, hasStartedSession, sessionId])
+  //   void ensureInitialDraftCaptured("first_non_empty_draft")
+  // }, [ensureInitialDraftCaptured, essay, hasLoggedInitialDraft, hasStartedSession, sessionId])
 
   useEffect(() => {
     if (!sessionId || !hasStartedSession || !analyzeClickedAt || isSubmitted) return
@@ -488,40 +499,54 @@ export default function ArgumentativeWritingAssistant() {
           element_type: string
           initial_text: string | null
           original_text: string | null
+          suggested_correction: string | null
         }> = []
 
-        const pushIssueCandidate = (clientKey: string, elementType: string, text: string | undefined) => {
-          const normalizedText = text?.trim() ? text : null
+        const extractSuggestedCorrection = (
+          element: (ArgumentElement & { suggested_correction?: string }) | null | undefined,
+        ): string | null => {
+          const raw =
+            (element as (ArgumentElement & { suggested_correction?: string }) | null)?.suggested_correction ??
+            element?.suggestion
+          if (typeof raw !== "string") return null
+          const trimmed = raw.trim()
+          return trimmed ? trimmed : null
+        }
+
+        const pushIssueCandidate = (clientKey: string, elementType: string, element: ArgumentElement | undefined) => {
+          const normalizedText = element?.text?.trim() ? element.text : null
+          const suggestedCorrection = extractSuggestedCorrection(element)
           issueCandidates.push({
             client_key: clientKey,
             element_type: normalizeElementType(elementType),
             initial_text: normalizedText,
             original_text: normalizedText,
+            suggested_correction: suggestedCorrection,
           })
         }
 
         // Use stable IDs that match ArgumentDiagram / ArgumentativeFeedback element IDs
-        pushIssueCandidate("lead", "lead", argResult.elements.lead.text)
-        pushIssueCandidate("position", "position", argResult.elements.position.text)
+        pushIssueCandidate("lead", "lead", argResult.elements.lead)
+        pushIssueCandidate("position", "position", argResult.elements.position)
 
         argResult.elements.claims.slice(0, 2).forEach((claim, index) => {
           const explicitId = (claim.id ?? "").trim()
           const clientKey = explicitId || `claim-${index + 1}`
-          pushIssueCandidate(clientKey, "claim", claim.text)
+          pushIssueCandidate(clientKey, "claim", claim)
         })
 
-        pushIssueCandidate("counterclaim", "counterclaim", argResult.elements.counterclaim.text)
+        pushIssueCandidate("counterclaim", "counterclaim", argResult.elements.counterclaim)
 
         argResult.elements.evidence.slice(0, 2).forEach((evidence, index) => {
           const explicitId = (evidence.id ?? "").trim()
           const clientKey = explicitId || `evidence-${index + 1}`
-          pushIssueCandidate(clientKey, "evidence", evidence.text)
+          pushIssueCandidate(clientKey, "evidence", evidence)
         })
 
-        pushIssueCandidate("rebuttal", "rebuttal", argResult.elements.rebuttal.text)
-        pushIssueCandidate("counterclaim_evidence", "counterclaim_evidence", argResult.elements.counterclaim_evidence.text)
-        pushIssueCandidate("rebuttal_evidence", "rebuttal_evidence", argResult.elements.rebuttal_evidence.text)
-        pushIssueCandidate("conclusion", "conclusion", argResult.elements.conclusion.text)
+        pushIssueCandidate("rebuttal", "rebuttal", argResult.elements.rebuttal)
+        pushIssueCandidate("counterclaim_evidence", "counterclaim_evidence", argResult.elements.counterclaim_evidence)
+        pushIssueCandidate("rebuttal_evidence", "rebuttal_evidence", argResult.elements.rebuttal_evidence)
+        pushIssueCandidate("conclusion", "conclusion", argResult.elements.conclusion)
 
         const issuesPayload = issueCandidates.map((issue, index) => ({
           ...issue,
@@ -593,6 +618,13 @@ export default function ArgumentativeWritingAssistant() {
       setRevisionData((payload.revision_data as RevisionBehaviorData) ?? null)
       setIsSubmitted(true)
       setShowInsightsModal(true)
+      insightsOpenedAtRef.current = Date.now()
+      void logInteraction({
+        eventType: "revision_insights_viewed",
+        metadata: {
+          source: "revision_insights_modal",
+        },
+      })
     } catch (error) {
       console.error("Final submission failed", error)
       alert(error instanceof Error ? error.message : "Failed to finalize session. Please try again.")
@@ -786,7 +818,23 @@ export default function ArgumentativeWritingAssistant() {
         />
       </div>
 
-      <Dialog open={showInsightsModal} onOpenChange={setShowInsightsModal}>
+      <Dialog
+        open={showInsightsModal}
+        onOpenChange={(open) => {
+          if (!open && insightsOpenedAtRef.current) {
+            const seconds = Math.round(
+              (Date.now() - insightsOpenedAtRef.current) / 1000
+            )
+
+            void logInteraction({
+              eventType: "revision_insights_read_time",
+              metadata: { seconds_read: seconds },
+            })
+          }
+
+          setShowInsightsModal(open)
+        }}
+      >
         <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Revision Insights</DialogTitle>

@@ -586,7 +586,8 @@ Return JSON: {"feedback": [["point1", "point2", "point3"], ...]}`
 // ============================================================================
 
 async function batchSuggestionsAndReasonsAll(
-  elements: ElementEntry[]
+  elements: ElementEntry[],
+  prompt: string  // ← add this
 ): Promise<{ suggestions: string[]; reasons: string[] }> {
   const needs = elements
     .map((e, i) => ({ ...e, originalIndex: i }))
@@ -616,6 +617,7 @@ async function batchSuggestionsAndReasonsAll(
 For EACH element below, provide TWO parts:
 
 1. Suggestion (ENGLISH ONLY)
+Essay prompt: """${prompt}"""
 Write ONE clear and specific revision that directly improves the sentence or element.
 Prefer rewriting the sentence or a concise portion of it rather than giving a general instruction.
 
@@ -716,7 +718,7 @@ async function runFeedbackChain(elements: ElementEntry[], prompt: string): Promi
   console.log("📍 Running feedback (Effective) + suggestions (non-Effective) in parallel...")
   const [feedbacks, { suggestions, reasons }] = await Promise.all([
     batchFeedbackAll(elements, prompt),
-    batchSuggestionsAndReasonsAll(elements),
+    batchSuggestionsAndReasonsAll(elements, prompt),  // ← add prompt here
   ])
 
   console.log(`🎉 Chain complete in ${Date.now() - start}ms`)
@@ -818,7 +820,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(validated.data)
   } catch (error) {
     console.error("Error analyzing argumentative structure:", error)
-    return NextResponse.json({ error: "Failed to analyze essay" }, { status: 500 })
+    const message =
+      error instanceof Error && error.message
+        ? error.message
+        : "Failed to analyze essay"
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
 // import { type NextRequest, NextResponse } from "next/server"

@@ -32,7 +32,7 @@ export function PromptSelector({ onPromptSelect, selectedPrompt }: PromptSelecto
         <SelectContent>
           {samplePrompts.map((promptData) => (
             <SelectItem key={promptData.id} value={promptData.id.toString()}>
-              <div className="max-w-[400px] truncate">{promptData.prompt.substring(0, 80)}...</div>
+              <div className="max-w-[800px]">{promptData.prompt.substring(0, 100)}</div>
             </SelectItem>
           ))}
         </SelectContent>

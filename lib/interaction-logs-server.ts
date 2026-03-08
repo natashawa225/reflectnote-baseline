@@ -4,6 +4,9 @@ export type InteractionEventType =
   | "suggestion_revealed"
   | "edit_detected"
   | "final_submission"
+  | "revision_insights_viewed"
+  | "pdf_exported"
+  | "revision_insights_read_time"
 
 export type SessionCondition = "baseline" | "multilevel"
 export type DraftStage = "initial" | "after_edit" | "final"
@@ -26,6 +29,7 @@ export interface IssueRow {
   corrected_text: string | null
   initial_text: string | null
   original_text: string | null
+  suggested_correction: string | null
 }
 
 export interface InteractionLogRow {
@@ -71,6 +75,7 @@ interface InsertIssueInput {
   initial_text?: string | null
   original_text?: string | null
   corrected_text?: string | null
+   suggested_correction?: string | null
 }
 
 function getSupabaseConfig() {
@@ -184,6 +189,11 @@ export async function insertIssues(inputs: InsertIssueInput[]): Promise<IssueRow
   const uniqueSessionIds = [...new Set(inputs.map((input) => input.session_id))]
   await Promise.all(uniqueSessionIds.map((sessionId) => upsertSession(sessionId, "baseline")))
 
+  const payload = inputs.map((input) => ({
+    ...input,
+    suggested_correction: input.suggested_correction ?? null,
+  }))
+
   const response = await fetch(`${supabaseUrl}/rest/v1/issues`, {
     method: "POST",
     headers: {
@@ -192,7 +202,7 @@ export async function insertIssues(inputs: InsertIssueInput[]): Promise<IssueRow
       "Content-Type": "application/json",
       Prefer: "return=representation",
     },
-    body: JSON.stringify(inputs),
+    body: JSON.stringify(payload),
   })
 
   const text = await response.text()

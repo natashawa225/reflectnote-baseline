@@ -194,6 +194,7 @@ export function ArgumentDiagram({ analysis, essay, onElementClick }: ArgumentDia
         <p className="text-sm">
         这张图展示了你的议论文结构，以及各个论证要素的表现情况。
         不同颜色代表不同程度：
+        图表会在点击“Analyze Essay”后生成。本次写作任务中只需要点击一次进行分析。
         </p>
       </CardHeader>
       <CardContent className="p-6">
