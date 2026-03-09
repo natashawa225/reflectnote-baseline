@@ -686,7 +686,7 @@ export default function ArgumentativeWritingAssistant() {
 
   const wordCount = essay.trim().split(/\s+/).filter(Boolean).length
   const analyzeAtMs = analyzeClickedAt ? Date.parse(analyzeClickedAt) : null
-  const submitUnlockAtMs = analyzeAtMs ? analyzeAtMs + 5 * 60 * 1000 : null
+  const submitUnlockAtMs = analyzeAtMs ? analyzeAtMs + 3 * 60 * 1000 : null
 
   const canSubmit = useMemo(() => {
     if (!submitUnlockAtMs || isSubmitted) return false
@@ -753,14 +753,14 @@ export default function ArgumentativeWritingAssistant() {
                 <div className="flex items-center gap-3">
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-medium text-muted-foreground">
-                      Full Name <span className="text-red-500">*</span>
+                    姓名 <span className="text-red-500">*</span>
                     </label>
                     <input
                       className={`w-40 rounded-md border-2 bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${
                         !studentName.trim() ? "border-red-400" : "border-green-400"
                       }`}
                       
-                      placeholder="Enter Your Name"
+                      placeholder="请输入姓名"
                       value={studentName}
                       onChange={(e) => setStudentName(e.target.value)}
                       disabled={isSubmitted}
@@ -768,13 +768,13 @@ export default function ArgumentativeWritingAssistant() {
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-medium text-muted-foreground">
-                      Student ID <span className="text-red-500">*</span>
+                      学号 <span className="text-red-500">*</span>
                     </label>
                     <input
                       className={`w-45 rounded-md border-2 bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${
                         !studentId.trim() ? "border-red-400" : "border-green-400"
                       }`}
-                      placeholder="Enter Your Student ID"
+                      placeholder="请输入学号"
                       value={studentId}
                       onChange={(e) => setStudentId(e.target.value)}
                       disabled={isSubmitted}
