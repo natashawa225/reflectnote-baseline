@@ -30,6 +30,7 @@ export interface IssueRow {
   initial_text: string | null
   original_text: string | null
   suggested_correction: string | null
+  effectiveness: string | null
 }
 
 export interface InteractionLogRow {
@@ -75,7 +76,8 @@ interface InsertIssueInput {
   initial_text?: string | null
   original_text?: string | null
   corrected_text?: string | null
-   suggested_correction?: string | null
+  suggested_correction?: string | null
+  effectiveness?: string | null
 }
 
 function getSupabaseConfig() {
@@ -192,6 +194,7 @@ export async function insertIssues(inputs: InsertIssueInput[]): Promise<IssueRow
   const payload = inputs.map((input) => ({
     ...input,
     suggested_correction: input.suggested_correction ?? null,
+    effectiveness: input.effectiveness ?? null,
   }))
 
   const response = await fetch(`${supabaseUrl}/rest/v1/issues`, {

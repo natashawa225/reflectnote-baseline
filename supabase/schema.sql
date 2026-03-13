@@ -85,3 +85,6 @@ create index if not exists idx_snapshots_session_id
 
 create index if not exists idx_snapshots_issue_id
   on public.draft_snapshots(issue_id);
+
+ALTER TABLE public.issues
+ADD COLUMN effectiveness TEXT;

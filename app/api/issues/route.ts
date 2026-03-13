@@ -10,6 +10,7 @@ const issueSchema = z.object({
   original_text: z.string().optional().nullable(),
   corrected_text: z.string().optional().nullable(),
   suggested_correction: z.string().optional().nullable(),
+  effectiveness: z.string().optional().nullable(),
 })
 
 const bodySchema = z.object({
@@ -41,6 +42,7 @@ export async function POST(request: Request) {
       original_text: issue.original_text ?? null,
       corrected_text: issue.corrected_text ?? null,
       suggested_correction: issue.suggested_correction ?? null,
+      effectiveness: issue.effectiveness ?? null,
     }))
 
     const rows = await insertIssues(payload)

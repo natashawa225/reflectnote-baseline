@@ -500,6 +500,7 @@ export default function ArgumentativeWritingAssistant() {
           initial_text: string | null
           original_text: string | null
           suggested_correction: string | null
+          effectiveness: string | null
         }> = []
 
         const extractSuggestedCorrection = (
@@ -516,12 +517,14 @@ export default function ArgumentativeWritingAssistant() {
         const pushIssueCandidate = (clientKey: string, elementType: string, element: ArgumentElement | undefined) => {
           const normalizedText = element?.text?.trim() ? element.text : null
           const suggestedCorrection = extractSuggestedCorrection(element)
+          const effectiveness = element?.effectiveness ?? "Missing"
           issueCandidates.push({
             client_key: clientKey,
             element_type: normalizeElementType(elementType),
             initial_text: normalizedText,
             original_text: normalizedText,
             suggested_correction: suggestedCorrection,
+            effectiveness,
           })
         }
 
