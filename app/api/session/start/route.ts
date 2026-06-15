@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { upsertSession, type SessionCondition } from "@/lib/interaction-logs-server"
+import { isSupabaseNetworkError, upsertSession, type SessionCondition } from "@/lib/interaction-logs-server"
 
 const bodySchema = z.object({
   session_id: z.string().uuid(),
@@ -17,7 +17,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request body", details: parsed.error.issues }, { status: 400 })
     }
 
-    // const row = await upsertSession(parsed.data.session_id, "baseline" as SessionCondition)
     const row = await upsertSession(parsed.data.session_id, parsed.data.condition as SessionCondition, {
       studentName: parsed.data.student_name,
       studentId: parsed.data.student_id,
@@ -26,6 +25,18 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, row })
   } catch (error) {
+    if (isSupabaseNetworkError(error)) {
+      console.warn("session/start skipped persistence because Supabase is unreachable")
+      return NextResponse.json(
+        {
+          success: true,
+          persisted: false,
+          warning: "Session started locally, but Supabase logging is temporarily unavailable.",
+        },
+        { status: 202 },
+      )
+    }
+
     console.error("session/start POST failed", error)
     return NextResponse.json({ error: "Failed to start session" }, { status: 500 })
   }

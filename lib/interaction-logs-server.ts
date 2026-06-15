@@ -94,6 +94,13 @@ function getSupabaseConfig() {
 }
 
 const TRANSIENT_SUPABASE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504])
+const TRANSIENT_SUPABASE_ERROR_CODES = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "ETIMEDOUT",
+  "EAI_AGAIN",
+])
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -121,6 +128,25 @@ async function fetchSupabase(url: string, init: RequestInit): Promise<Response> 
   }
 
   throw new Error("Supabase request failed after retries.")
+}
+
+export function isSupabaseNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  const cause = error.cause
+  if (
+    cause &&
+    typeof cause === "object" &&
+    "code" in cause &&
+    typeof cause.code === "string" &&
+    TRANSIENT_SUPABASE_ERROR_CODES.has(cause.code)
+  ) {
+    return true
+  }
+
+  return error instanceof TypeError && error.message === "fetch failed"
 }
 
 export async function upsertSession(

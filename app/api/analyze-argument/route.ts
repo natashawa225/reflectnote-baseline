@@ -605,7 +605,15 @@ For EACH element below, provide TWO parts:
 Essay prompt: """${prompt}"""
 Write ONE concise revision that could appear in the student's essay. The revision should improve the element’s argumentative function, not only grammar or vocabulary.
 
-Element focus: - Lead: engage the reader and connect to the position. - Position: state a clear stance related to the prompt. - Claim: give a clear reason supporting the position. - Evidence: support the claim with a clear reason, explanation, or simple example. - Counterclaim: present a reasonable opposing view. - Rebuttal: answer the counterclaim with a reason, solution, or limitation. - Concluding summary: restate the position and main claims without new ideas.
+Element focus:
+- Lead: engage the reader and connect to the position.
+- Position: state a clear stance related to the prompt.
+- Claim: give a clear reason supporting the position.
+- Evidence: support the claim with a clear reason, explanation, or simple example.
+- Counterclaim: present a reasonable opposing view.
+- Rebuttal: answer the counterclaim with a reason, solution, or limitation.
+- Concluding summary: restate the position and main claims without new ideas.
+
 Revision strategy by effectiveness:
 - If effectiveness is "Effective":
   * Make only a small improvement.
@@ -750,7 +758,7 @@ Instructions:
 - For each claim (C1), include id="claim-N".
 - For each evidence (D1), include id="evidence-N" and parentClaimId="claim-N" referencing the claim it supports.
 - Do not modify the original wording.
-- Output only the tagged essay.`
+- Output only the tagged essay.`;
 
 // ============================================================================
 // ROUTE HANDLER
@@ -817,10 +825,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(validated.data)
   } catch (error) {
     console.error("Error analyzing argumentative structure:", error)
+  
     const message =
       error instanceof Error && error.message
         ? error.message
         : "Failed to analyze essay"
-    return NextResponse.json({ error: message }, { status: 500 })
-  } 
+  
+    return NextResponse.json(
+      { error: message },
+      { status: 500 }
+    )
+  }
 }
+//=
