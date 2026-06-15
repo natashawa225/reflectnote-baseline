@@ -109,21 +109,6 @@ export default function ArgumentativeWritingAssistant() {
   }, [])
 
   useEffect(() => {
-    if (!sessionId) return
-
-    void fetch("/api/session/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session_id: sessionId,
-        condition: "baseline",
-      }),
-    }).catch((error) => {
-      console.error("Failed to initialize session", error)
-    })
-  }, [sessionId])
-
-  useEffect(() => {
     if (!analyzeClickedAt || isSubmitted) return
 
     const interval = setInterval(() => {

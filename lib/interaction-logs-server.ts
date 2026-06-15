@@ -93,6 +93,36 @@ function getSupabaseConfig() {
   return { supabaseUrl, serviceRoleKey }
 }
 
+const TRANSIENT_SUPABASE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504])
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function fetchSupabase(url: string, init: RequestInit): Promise<Response> {
+  const maxAttempts = 3
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(url, init)
+      const shouldRetry =
+        TRANSIENT_SUPABASE_STATUSES.has(response.status) && attempt < maxAttempts
+
+      if (!shouldRetry) {
+        return response
+      }
+    } catch (error) {
+      if (attempt === maxAttempts) {
+        throw error
+      }
+    }
+
+    await wait(150 * attempt)
+  }
+
+  throw new Error("Supabase request failed after retries.")
+}
+
 export async function upsertSession(
   sessionId: string,
   condition: SessionCondition = "multilevel",
@@ -105,7 +135,7 @@ export async function upsertSession(
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig()
   const startedAt = options?.startedAt ?? new Date().toISOString()
 
-  const response = await fetch(`${supabaseUrl}/rest/v1/sessions`, {
+  const response = await fetchSupabase(`${supabaseUrl}/rest/v1/sessions`, {
     method: "POST",
     headers: {
       apikey: serviceRoleKey,
@@ -138,7 +168,7 @@ export async function updateSessionSubmittedAt(sessionId: string): Promise<Sessi
   const url = new URL(`${supabaseUrl}/rest/v1/sessions`)
   url.searchParams.set("id", `eq.${sessionId}`)
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchSupabase(url.toString(), {
     method: "PATCH",
     headers: {
       apikey: serviceRoleKey,
@@ -164,7 +194,7 @@ export async function updateSessionReflectiveSummary(sessionId: string, reflecti
   const url = new URL(`${supabaseUrl}/rest/v1/sessions`)
   url.searchParams.set("id", `eq.${sessionId}`)
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchSupabase(url.toString(), {
     method: "PATCH",
     headers: {
       apikey: serviceRoleKey,
@@ -197,7 +227,7 @@ export async function insertIssues(inputs: InsertIssueInput[]): Promise<IssueRow
     effectiveness: input.effectiveness ?? null,
   }))
 
-  const response = await fetch(`${supabaseUrl}/rest/v1/issues`, {
+  const response = await fetchSupabase(`${supabaseUrl}/rest/v1/issues`, {
     method: "POST",
     headers: {
       apikey: serviceRoleKey,
@@ -243,7 +273,7 @@ export async function insertInteractionLog(
     timestamp: input.timestamp ?? new Date().toISOString(),
   }
 
-  const response = await fetch(
+  const response = await fetchSupabase(
     `${supabaseUrl}/rest/v1/interaction_logs`,
     {
       method: "POST",
@@ -273,7 +303,7 @@ export async function insertDraftSnapshot(input: InsertDraftSnapshotInput): Prom
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig()
   await upsertSession(input.session_id, "baseline")
 
-  const response = await fetch(`${supabaseUrl}/rest/v1/draft_snapshots`, {
+  const response = await fetchSupabase(`${supabaseUrl}/rest/v1/draft_snapshots`, {
     method: "POST",
     headers: {
       apikey: serviceRoleKey,
@@ -328,7 +358,7 @@ export async function updateDraftSnapshotById(
   const url = new URL(`${supabaseUrl}/rest/v1/draft_snapshots`)
   url.searchParams.set("id", `eq.${id}`)
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchSupabase(url.toString(), {
     method: "PATCH",
     headers: {
       apikey: serviceRoleKey,
@@ -361,7 +391,7 @@ export async function getSessionLogs(sessionId: string): Promise<InteractionLogR
   url.searchParams.set("select", "id,session_id,issue_id,event_type,feedback_level,timestamp,metadata")
   url.searchParams.set("order", "timestamp.asc")
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchSupabase(url.toString(), {
     method: "GET",
     headers: {
       apikey: serviceRoleKey,
@@ -391,7 +421,7 @@ export async function getInteractionLogBySessionAndEvent(
   url.searchParams.set("order", "timestamp.asc")
   url.searchParams.set("limit", "1")
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchSupabase(url.toString(), {
     method: "GET",
     headers: {
       apikey: serviceRoleKey,
@@ -417,7 +447,7 @@ export async function getSessionDraftSnapshots(sessionId: string): Promise<Draft
   url.searchParams.set("select", "id,session_id,issue_id,stage,draft_text,timestamp")
   url.searchParams.set("order", "timestamp.asc")
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchSupabase(url.toString(), {
     method: "GET",
     headers: {
       apikey: serviceRoleKey,
@@ -447,7 +477,7 @@ export async function getDraftSnapshotBySessionAndStage(
   url.searchParams.set("order", "timestamp.asc")
   url.searchParams.set("limit", "1")
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchSupabase(url.toString(), {
     method: "GET",
     headers: {
       apikey: serviceRoleKey,
